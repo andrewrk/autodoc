@@ -1,0 +1,405 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Documentation - Zig</title>
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNTMgMTQwIj48ZyBmaWxsPSIjRjdBNDFEIj48Zz48cG9seWdvbiBwb2ludHM9IjQ2LDIyIDI4LDQ0IDE5LDMwIi8+PHBvbHlnb24gcG9pbnRzPSI0NiwyMiAzMywzMyAyOCw0NCAyMiw0NCAyMiw5NSAzMSw5NSAyMCwxMDAgMTIsMTE3IDAsMTE3IDAsMjIiIHNoYXBlLXJlbmRlcmluZz0iY3Jpc3BFZGdlcyIvPjxwb2x5Z29uIHBvaW50cz0iMzEsOTUgMTIsMTE3IDQsMTA2Ii8+PC9nPjxnPjxwb2x5Z29uIHBvaW50cz0iNTYsMjIgNjIsMzYgMzcsNDQiLz48cG9seWdvbiBwb2ludHM9IjU2LDIyIDExMSwyMiAxMTEsNDQgMzcsNDQgNTYsMzIiIHNoYXBlLXJlbmRlcmluZz0iY3Jpc3BFZGdlcyIvPjxwb2x5Z29uIHBvaW50cz0iMTE2LDk1IDk3LDExNyA5MCwxMDQiLz48cG9seWdvbiBwb2ludHM9IjExNiw5NSAxMDAsMTA0IDk3LDExNyA0MiwxMTcgNDIsOTUiIHNoYXBlLXJlbmRlcmluZz0iY3Jpc3BFZGdlcyIvPjxwb2x5Z29uIHBvaW50cz0iMTUwLDAgNTIsMTE3IDMsMTQwIDEwMSwyMiIvPjwvZz48Zz48cG9seWdvbiBwb2ludHM9IjE0MSwyMiAxNDAsNDAgMTIyLDQ1Ii8+PHBvbHlnb24gcG9pbnRzPSIxNTMsMjIgMTUzLDExNyAxMDYsMTE3IDEyMCwxMDUgMTI1LDk1IDEzMSw5NSAxMzEsNDUgMTIyLDQ1IDEzMiwzNiAxNDEsMjIiIHNoYXBlLXJlbmRlcmluZz0iY3Jpc3BFZGdlcyIvPjxwb2x5Z29uIHBvaW50cz0iMTI1LDk1IDEzMCwxMTAgMTA2LDExNyIvPjwvZz48L2c+PC9zdmc+">
+    <style type="text/css">
+      body {
+        font-family: system-ui, -apple-system, Roboto, "Segoe UI", sans-serif;
+        max-width: 60em;
+      }
+      .hidden {
+        display: none;
+      }
+      a {
+        color: #2A6286;
+      }
+      pre{
+        font-family:"Source Code Pro",monospace;
+        font-size:1em;
+        background-color:#F5F5F5;
+        padding:1em;
+        overflow-x: auto;
+      }
+      code {
+        font-family:"Source Code Pro",monospace;
+        font-size:1em;
+      }
+      nav {
+        width: 10em;
+        position: fixed;
+        left: 0;
+        top: 0;
+        height: 100vh;
+        overflow: auto;
+      }
+      nav h2 {
+        font-size: 1.2em;
+        text-decoration: underline;
+        margin: 0;
+        padding: 0.5em 0;
+        text-align: center;
+      }
+      nav p {
+        margin: 0;
+        padding: 0;
+        text-align: center;
+      }
+      section {
+        margin-left: 10em;
+      }
+      section h1 {
+        border-bottom: 1px dashed;
+      }
+      section h2 {
+        font-size: 1.3em;
+        margin: 0.5em 0;
+        padding: 0;
+        border-bottom: 1px solid;
+      }
+      #listNav {
+        list-style-type: none;
+        margin: 0.5em 0 0 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #f1f1f1;
+      }
+      #listNav li {
+        float:left;
+      }
+      #listNav li a {
+        display: block;
+        color: #000;
+        text-align: center;
+        padding: .5em .8em;
+        text-decoration: none;
+      }
+      #listNav li a:hover {
+        background-color: #555;
+        color: #fff;
+      }
+      #listNav li a.active {
+        background-color: #FFBB4D;
+        color: #000;
+      }
+
+      #listPkgs {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+        background-color: #f1f1f1;
+      }
+      #listPkgs li a {
+        display: block;
+        color: #000;
+        padding: 0.5em 1em;
+        text-decoration: none;
+      }
+      #listPkgs li a:hover {
+        background-color: #555;
+        color: #fff;
+      }
+      #listPkgs li a.active {
+        background-color: #FFBB4D;
+        color: #000;
+      }
+      #logo {
+        width: 8em;
+        padding: 0.5em 1em;
+      }
+
+      #search {
+        width: 100%;
+      }
+
+      #helpDialog {
+        width: 21em;
+        height: 19em;
+        position: fixed;
+        top: 0;
+        left: 0;
+        background-color: #333;
+        color: #fff;
+        border: 1px solid #fff;
+      }
+      #helpDialog h1 {
+        text-align: center;
+        font-size: 1.5em;
+      }
+      #helpDialog dt, #helpDialog dd {
+        display: inline;
+        margin: 0 0.2em;
+      }
+      kbd {
+        color: #000;
+        background-color: #fafbfc;
+        border-color: #d1d5da;
+        border-bottom-color: #c6cbd1;
+        box-shadow-color: #c6cbd1;
+        display: inline-block;
+        padding: 0.3em 0.2em;
+        font: 1.2em monospace;
+        line-height: 0.8em;
+        vertical-align: middle;
+        border: solid 1px;
+        border-radius: 3px;
+        box-shadow: inset 0 -1px 0;
+        cursor: default;
+      }
+
+      #listSearchResults li.selected {
+        background-color: #93e196;
+      }
+
+      #tableFnErrors dt {
+        font-weight: bold;
+      }
+
+      td {
+        vertical-align: top;
+        margin: 0;
+        padding: 0.5em;
+        max-width: 20em;
+        text-overflow: ellipsis;
+        overflow-x: hidden;
+      }
+
+      .tok-kw {
+          color: #333;
+          font-weight: bold;
+      }
+      .tok-str {
+          color: #d14;
+      }
+      .tok-builtin {
+          color: #0086b3;
+      }
+      .tok-comment {
+          color: #777;
+          font-style: italic;
+      }
+      .tok-fn {
+          color: #900;
+          font-weight: bold;
+      }
+      .tok-null {
+          color: #008080;
+      }
+      .tok-number {
+          color: #008080;
+      }
+      .tok-type {
+          color: #458;
+          font-weight: bold;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body{
+          background-color: #111;
+          color: #bbb;
+        }
+        a {
+          color: #88f;
+        }
+        pre{
+          background-color:#2A2A2A;
+        }
+        #listNav {
+          background-color: #333;
+        }
+        #listNav li a {
+          color: #fff;
+        }
+        #listNav li a:hover {
+          background-color: #555;
+          color: #fff;
+        }
+        #listNav li a.active {
+          background-color: #FFBB4D;
+          color: #000;
+        }
+        #listPkgs {
+          background-color: #333;
+        }
+        #listPkgs li a {
+          color: #fff;
+        }
+        #listPkgs li a:hover {
+          background-color: #555;
+          color: #fff;
+        }
+        #listPkgs li a.active {
+          background-color: #FFBB4D;
+          color: #000;
+        }
+        #listSearchResults li.selected {
+          background-color: #000;
+        }
+        #listSearchResults li.selected a {
+          color: #fff;
+        }
+        .tok-kw {
+            color: #eee;
+        }
+        .tok-str {
+            color: #2e5;
+        }
+        .tok-builtin {
+            color: #ff894c;
+        }
+        .tok-comment {
+            color: #aa7;
+        }
+        .tok-fn {
+            color: #e33;
+        }
+        .tok-null {
+            color: #ff8080;
+        }
+        .tok-number {
+            color: #ff8080;
+        }
+        .tok-type {
+            color: #68f;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 140">
+        <g fill="#F7A41D">
+          <g>
+            <polygon points="46,22 28,44 19,30"/>
+            <polygon points="46,22 33,33 28,44 22,44 22,95 31,95 20,100 12,117 0,117 0,22" shape-rendering="crispEdges"/>
+            <polygon points="31,95 12,117 4,106"/>
+          </g>
+          <g>
+            <polygon points="56,22 62,36 37,44"/>
+            <polygon points="56,22 111,22 111,44 37,44 56,32" shape-rendering="crispEdges"/>
+            <polygon points="116,95 97,117 90,104"/>
+            <polygon points="116,95 100,104 97,117 42,117 42,95" shape-rendering="crispEdges"/>
+            <polygon points="150,0 52,117 3,140 101,22"/>
+          </g>
+          <g>
+            <polygon points="141,22 140,40 122,45"/>
+            <polygon points="153,22 153,117 106,117 120,105 125,95 131,95 131,45 122,45 132,36 141,22" shape-rendering="crispEdges"/>
+            <polygon points="125,95 130,110 106,117"/>
+          </g>
+        </g>
+        <style>
+        #text { fill: #121212 }
+        @media (prefers-color-scheme: dark) { #text { fill: #f2f2f2 } }
+        </style>
+        <g id="text">
+          <g>
+            <polygon points="260,22 260,37 229,40 177,40 177,22" shape-rendering="crispEdges"/>
+            <polygon points="260,37 207,99 207,103 176,103 229,40 229,37"/>
+            <polygon points="261,99 261,117 176,117 176,103 206,99" shape-rendering="crispEdges"/>
+          </g>
+          <rect x="272" y="22" shape-rendering="crispEdges" width="22" height="95"/>
+          <g>
+            <polygon points="394,67 394,106 376,106 376,81 360,70 346,67" shape-rendering="crispEdges"/>
+            <polygon points="360,68 376,81 346,67"/>
+            <path d="M394,106c-10.2,7.3-24,12-37.7,12c-29,0-51.1-20.8-51.1-48.3c0-27.3,22.5-48.1,52-48.1    c14.3,0,29.2,5.5,38.9,14l-13,15c-7.1-6.3-16.8-10-25.9-10c-17,0-30.2,12.9-30.2,29.5c0,16.8,13.3,29.6,30.3,29.6    c5.7,0,12.8-2.3,19-5.5L394,106z"/>
+          </g>
+        </g>
+        </svg>
+      </div>
+      <div id="sectPkgs" class="hidden">
+        <h2>Packages</h2>
+        <ul id="listPkgs">
+        </ul>
+      </div>
+      <div id="sectInfo" class="hidden">
+        <h2>Zig Version</h2>
+        <p id="tdZigVer"></p>
+        <h2>Target</h2>
+        <p id="tdTarget"></p>
+      </div>
+    </nav>
+    <section>
+    <input type="search" id="search" autocomplete="off" spellcheck="false" placeholder="`s` to search, `?` to see more options">
+    <p id="status">Loading...</p>
+    <div id="sectNav" class="hidden"><ul id="listNav"></ul></div>
+    <div id="fnProto" class="hidden">
+      <pre id="fnProtoCode"></pre>
+    </div>
+    <h1 id="hdrName" class="hidden"></h1>
+    <div id="fnDocs" class="hidden"></div>
+    <div id="sectFnErrors" class="hidden">
+      <h2>Errors</h2>
+      <div id="fnErrorsAnyError">
+        <p><span class="tok-type">anyerror</span> means the error set is known only at runtime.</p>
+      </div>
+      <div id="tableFnErrors"><dl id="listFnErrors"></dl></div>
+    </div>
+    <div id="fnExamples" class="hidden"></div>
+    <div id="fnNoExamples" class="hidden">
+      <p>This function is not tested or referenced.</p>
+    </div>
+    <div id="sectSearchResults" class="hidden">
+      <h2>Search Results</h2>
+      <ul id="listSearchResults"></ul>
+    </div>
+    <div id="sectSearchNoResults" class="hidden">
+      <h2>No Results Found</h2>
+      <p>Press escape to exit search and then '?' to see more options.</p>
+    </div>
+    <div id="sectFields" class="hidden">
+      <h2>Fields</h2>
+      <div id="listFields">
+      </div>
+    </div>
+    <div id="sectTypes" class="hidden">
+      <h2>Types</h2>
+      <ul id="listTypes">
+      </ul>
+    </div>
+    <div id="sectNamespaces" class="hidden">
+      <h2>Namespaces</h2>
+      <ul id="listNamespaces">
+      </ul>
+    </div>
+    <div id="sectGlobalVars" class="hidden">
+      <h2>Global Variables</h2>
+      <table>
+        <tbody id="listGlobalVars">
+        </tbody>
+      </table>
+    </div>
+    <div id="sectFns" class="hidden">
+      <h2>Functions</h2>
+      <table>
+        <tbody id="listFns">
+        </tbody>
+      </table>
+    </div>
+    <div id="sectValues" class="hidden">
+      <h2>Values</h2>
+      <table>
+        <tbody id="listValues">
+        </tbody>
+      </table>
+    </div>
+    <div id="sectErrSets" class="hidden">
+      <h2>Error Sets</h2>
+      <ul id="listErrSets">
+      </ul>
+    </div>
+    </section>
+    <div id="helpDialog" class="hidden">
+      <h1>Keyboard Shortcuts</h1>
+      <dl><dt><kbd>?</kbd></dt><dd>Show this help dialog</dd></dl>
+      <dl><dt><kbd>Esc</kbd></dt><dd>Clear focus; close this dialog</dd></dl>
+      <dl><dt><kbd>s</kbd></dt><dd>Focus the search field</dd></dl>
+      <dl><dt><kbd>↑</kbd></dt><dd>Move up in search results</dd></dl>
+      <dl><dt><kbd>↓</kbd></dt><dd>Move down in search results</dd></dl>
+      <dl><dt><kbd>⏎</kbd></dt><dd>Go to active search result</dd></dl>
+    </div>
+    <script src="main.js"></script>
+  </body>
+</html>
+
