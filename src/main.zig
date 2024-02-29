@@ -1,6 +1,9 @@
-const std = @import("std");
+var files: std.StringArrayHashMapUnmanaged([]u8) = .{};
 const gpa = std.heap.wasm_allocator;
+
+const std = @import("std");
 const log = std.log;
+const assert = std.debug.assert;
 
 const js = struct {
     extern "js" fn log(ptr: [*]const u8, len: usize) void;
@@ -9,6 +12,7 @@ const js = struct {
 
 pub const std_options: std.Options = .{
     .logFn = logFn,
+    //.log_level = .debug,
 };
 
 pub fn panic(msg: []const u8, st: ?*std.builtin.StackTrace, addr: ?usize) noreturn {
@@ -26,19 +30,12 @@ fn logFn(
 ) void {
     const level_txt = comptime message_level.asText();
     const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
-    const line = std.fmt.allocPrint(gpa, level_txt ++ prefix2 ++ format, args) catch @panic("OOM");
-    defer gpa.free(line);
+    var buf: [500]u8 = undefined;
+    const line = std.fmt.bufPrint(&buf, level_txt ++ prefix2 ++ format, args) catch l: {
+        buf[buf.len - 3 ..][0..3].* = "...".*;
+        break :l &buf;
+    };
     js.log(line.ptr, line.len);
-}
-
-export fn parse(
-    source_index: u32,
-    source_len: u32,
-) u32 {
-    const source_ptr: [*:0]u8 = @ptrFromInt(source_index);
-    const source_code = source_ptr[0..source_len :0];
-
-    return wrapError(parse_inner(source_code));
 }
 
 export fn alloc(n: usize) [*]u8 {
@@ -46,32 +43,54 @@ export fn alloc(n: usize) [*]u8 {
     return slice.ptr;
 }
 
-export fn unpack(tar_ptr: [*]const u8, tar_len: usize) void {
+export fn unpack(tar_ptr: [*]u8, tar_len: usize) void {
     const tar_bytes = tar_ptr[0..tar_len];
-    log.debug("received {d} bytes of tar file", .{tar_bytes.len});
+    //log.debug("received {d} bytes of tar file", .{tar_bytes.len});
 
     unpack_inner(tar_bytes) catch |err| {
         fatal("unable to unpack tar: {s}", .{@errorName(err)});
     };
 }
 
-fn unpack_inner(tar_bytes: []const u8) !void {
+fn unpack_inner(tar_bytes: []u8) !void {
     var fbs = std.io.fixedBufferStream(tar_bytes);
     var it = std.tar.iterator(fbs.reader(), null);
     while (try it.next()) |file| {
         switch (file.kind) {
             .normal => {
                 if (file.size == 0 and file.name.len == 0) break;
-                log.debug("found file: '{s}'", .{file.name});
+                if (std.mem.endsWith(u8, file.name, ".zig")) {
+                    log.debug("found file: '{s}'", .{file.name});
+                    const file_name = try gpa.dupe(u8, file.name);
+                    const file_bytes = tar_bytes[fbs.pos..][0..@intCast(file.size)];
+                    try files.put(gpa, file_name, file_bytes);
+                } else {
+                    log.warn("skipping: '{s}' - the tar creation should have done that", .{
+                        file.name,
+                    });
+                }
                 try file.skip();
             },
             else => continue,
         }
     }
+
+    for (files.keys(), files.values()) |path, source| {
+        log.debug("parsing file: '{s}'", .{path});
+        try parse(source);
+    }
 }
 
-fn parse_inner(source_code: [:0]const u8) !void {
-    var tree = try std.zig.Ast.parse(gpa, source_code, .zig);
+fn parse(source: []u8) !void {
+    // Require every source file to end with a newline so that Zig's tokenizer
+    // can continue to require null termination and Autodoc implementation can
+    // avoid copying source bytes from the decompressed tar file buffer.
+    if (source.len == 0) return;
+    assert(source[source.len - 1] == '\n');
+    source[source.len - 1] = 0;
+    const adjusted_source = source[0 .. source.len - 1 :0];
+
+    var tree = try std.zig.Ast.parse(gpa, adjusted_source, .zig);
     defer tree.deinit(gpa);
 }
 
