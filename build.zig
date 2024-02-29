@@ -17,7 +17,8 @@ pub fn build(b: *std.Build) void {
     // It would be nice if Zig could just use the exact list of functions that
     // are exported in `wasm`.
     wasm.root_module.export_symbol_names = &.{
-        "parse",
+        "unpack",
+        "alloc",
     };
     wasm.entry = .disabled;
 
