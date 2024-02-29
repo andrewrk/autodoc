@@ -199,15 +199,23 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
 
 var fqn_buffer: std.ArrayListUnmanaged(u8) = .{};
 
-export fn fully_qualified_name(node: GlobalAstNode) [*]u8 {
+const String = packed struct(u64) {
+    ptr: u32,
+    len: u32,
+
+    fn init(s: []const u8) String {
+        return .{
+            .ptr = @intFromPtr(s.ptr),
+            .len = s.len,
+        };
+    }
+};
+
+export fn fully_qualified_name(node: GlobalAstNode) String {
     fully_qualified_name_fallible(node) catch |err| switch (err) {
         error.OutOfMemory => @panic("OOM"),
     };
-    return fqn_buffer.items.ptr;
-}
-
-export fn fully_qualified_name_len() usize {
-    return fqn_buffer.items.len;
+    return String.init(fqn_buffer.items);
 }
 
 fn fully_qualified_name_fallible(node: GlobalAstNode) !void {
@@ -237,7 +245,12 @@ const GlobalToken = enum(u32) { _ };
 
 fn unpack_inner(tar_bytes: []u8) !void {
     var fbs = std.io.fixedBufferStream(tar_bytes);
-    var it = std.tar.iterator(fbs.reader(), null);
+    var file_name_buffer: [1024]u8 = undefined;
+    var link_name_buffer: [1024]u8 = undefined;
+    var it = std.tar.iterator(fbs.reader(), .{
+        .file_name_buffer = &file_name_buffer,
+        .link_name_buffer = &link_name_buffer,
+    });
     while (try it.next()) |file| {
         switch (file.kind) {
             .normal => {

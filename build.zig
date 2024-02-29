@@ -37,7 +37,6 @@ pub fn build(b: *std.Build) void {
         "query_begin",
         "query_exec",
         "fully_qualified_name",
-        "fully_qualified_name_len",
     };
     wasm.entry = .disabled;
 
