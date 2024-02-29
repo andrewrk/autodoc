@@ -34,6 +34,10 @@ pub fn build(b: *std.Build) void {
     wasm.root_module.export_symbol_names = &.{
         "unpack",
         "alloc",
+        "query_begin",
+        "query_exec",
+        "fully_qualified_name",
+        "fully_qualified_name_len",
     };
     wasm.entry = .disabled;
 
