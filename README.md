@@ -35,6 +35,9 @@ and put it also into `zig-out/`.
 ## Roadmap
 
 * file listings
+* struct fields
 * follow imports for better categorization
 * doctests
 * setting for displaying private parts
+* markdown
+* convert TODO comments into roadmap

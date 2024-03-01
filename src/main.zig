@@ -211,9 +211,12 @@ var string_result: std.ArrayListUnmanaged(u8) = .{};
 export fn decl_fqn(decl_index: Decl.Index) String {
     const decl = &decls.items[@intFromEnum(decl_index)];
     reset_with_file_path(&string_result, decl.file_path()) catch @panic("OOM");
-    if (decl.parent != .none)
+    if (decl.parent != .none) {
         append_parent_ns(&string_result, decl.parent) catch @panic("OOM");
-    string_result.appendSlice(gpa, decl.extra_info().name) catch @panic("OOM");
+        string_result.appendSlice(gpa, decl.extra_info().name) catch @panic("OOM");
+    } else {
+        string_result.items.len -= 1; // remove the trailing '.'
+    }
 
     return String.init(string_result.items);
 }
@@ -221,7 +224,15 @@ export fn decl_fqn(decl_index: Decl.Index) String {
 export fn decl_name(decl_index: Decl.Index) String {
     const decl = &decls.items[@intFromEnum(decl_index)];
     string_result.clearRetainingCapacity();
-    string_result.appendSlice(gpa, decl.extra_info().name) catch @panic("OOM");
+    const name = n: {
+        if (decl.parent == .none) {
+            // Then it is the root struct of a file.
+            const file_path = files.keys()[@intFromEnum(decl.file)];
+            break :n std.fs.path.stem(file_path);
+        }
+        break :n decl.extra_info().name;
+    };
+    string_result.appendSlice(gpa, name) catch @panic("OOM");
     return String.init(string_result.items);
 }
 
@@ -282,6 +293,14 @@ fn reset_with_file_path(list: *std.ArrayListUnmanaged(u8), file_path: []const u8
 
 const FileIndex = enum(u32) {
     _,
+
+    fn findRootDecl(file_index: FileIndex) Decl.Index {
+        for (decls.items, 0..) |*decl, i| {
+            if (decl.file == file_index and decl.ast_node == 0)
+                return @enumFromInt(i);
+        }
+        return .none;
+    }
 };
 
 const PackageIndex = enum(u32) {
@@ -549,11 +568,9 @@ export fn package_name(index: u32) String {
 
 export fn find_package_root(pkg: PackageIndex) Decl.Index {
     const root_file = packages.values()[@intFromEnum(pkg)];
-    for (decls.items, 0..) |*decl, i| {
-        if (decl.file == root_file and decl.ast_node == 0)
-            return @enumFromInt(i);
-    }
-    unreachable;
+    const result = root_file.findRootDecl();
+    assert(result != .none);
+    return result;
 }
 
 /// keep in sync with "CAT_" constants in main.js
@@ -564,11 +581,17 @@ const Category = enum(u8) {
     type,
     error_set,
     global_const,
+    primitive_true,
+    primitive_false,
+    primitive_null,
+    alias,
 };
 
 export fn categorize_decl(decl_index: Decl.Index) Category {
+    global_aliasee = .none;
     const decl = &decls.items[@intFromEnum(decl_index)];
-    const ast = &files.values()[@intFromEnum(decl.file)];
+    const file_index: FileIndex = decl.file;
+    const ast = &files.values()[@intFromEnum(file_index)];
     const node_tags = ast.nodes.items(.tag);
     const token_tags = ast.tokens.items(.tag);
     switch (node_tags[decl.ast_node]) {
@@ -583,7 +606,7 @@ export fn categorize_decl(decl_index: Decl.Index) Category {
             if (token_tags[var_decl.ast.mut_token] == .keyword_var)
                 return .global_variable;
 
-            return categorize_expr(ast, var_decl.ast.init_node);
+            return categorize_expr(file_index, var_decl.ast.init_node);
         },
 
         .fn_proto,
@@ -597,8 +620,10 @@ export fn categorize_decl(decl_index: Decl.Index) Category {
     }
 }
 
-fn categorize_expr(ast: *const Ast, node: Ast.Node.Index) Category {
+fn categorize_expr(file_index: FileIndex, node: Ast.Node.Index) Category {
+    const ast = &files.values()[@intFromEnum(file_index)];
     const node_tags = ast.nodes.items(.tag);
+    const node_datas = ast.nodes.items(.data);
     return switch (node_tags[node]) {
         .container_decl,
         .container_decl_trailing,
@@ -620,19 +645,81 @@ fn categorize_expr(ast: *const Ast, node: Ast.Node.Index) Category {
         .identifier => {
             const name_token = ast.nodes.items(.main_token)[node];
             const ident_name = ast.tokenSlice(name_token);
-            if (std.mem.eql(u8, ident_name, "true") or
-                std.mem.eql(u8, ident_name, "false") or
-                std.mem.eql(u8, ident_name, "null"))
-            {
-                return .global_const;
+            if (std.mem.eql(u8, ident_name, "true")) {
+                return .primitive_true;
+            } else if (std.mem.eql(u8, ident_name, "false")) {
+                return .primitive_false;
+            } else if (std.mem.eql(u8, ident_name, "null")) {
+                return .primitive_null;
             } else if (std.zig.primitives.isPrimitive(ident_name)) {
                 return .type;
             }
+            // TODO:
+            //return .alias;
             return .global_const;
+        },
+
+        .builtin_call_two, .builtin_call_two_comma => {
+            if (node_datas[node].lhs == 0) {
+                const params = [_]Ast.Node.Index{};
+                return categorize_builtin_call(file_index, node, &params);
+            } else if (node_datas[node].rhs == 0) {
+                const params = [_]Ast.Node.Index{node_datas[node].lhs};
+                return categorize_builtin_call(file_index, node, &params);
+            } else {
+                const params = [_]Ast.Node.Index{ node_datas[node].lhs, node_datas[node].rhs };
+                return categorize_builtin_call(file_index, node, &params);
+            }
+        },
+        .builtin_call, .builtin_call_comma => {
+            const params = ast.extra_data[node_datas[node].lhs..node_datas[node].rhs];
+            return categorize_builtin_call(file_index, node, params);
         },
 
         else => .global_const,
     };
+}
+
+/// Set only by `categorize_decl`; read only by `get_aliasee`, valid only
+/// when `categorize_decl` returns `.alias`.
+var global_aliasee: Decl.Index = .none;
+
+export fn get_aliasee() Decl.Index {
+    return global_aliasee;
+}
+
+fn categorize_builtin_call(
+    file_index: FileIndex,
+    node: Ast.Node.Index,
+    params: []const Ast.Node.Index,
+) Category {
+    const ast = &files.values()[@intFromEnum(file_index)];
+    const main_tokens = ast.nodes.items(.main_token);
+    const builtin_token = main_tokens[node];
+    const builtin_name = ast.tokenSlice(builtin_token);
+    if (std.mem.eql(u8, builtin_name, "@import")) {
+        const str_lit_token = main_tokens[params[0]];
+        const str_bytes = ast.tokenSlice(str_lit_token);
+        const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch @panic("OOM");
+        defer gpa.free(file_path);
+        const base_path = files.keys()[@intFromEnum(file_index)];
+        const resolved_path = std.fs.path.resolvePosix(gpa, &.{
+            base_path, "..", file_path,
+        }) catch @panic("OOM");
+        defer gpa.free(resolved_path);
+        log.debug("from '{s}' @import '{s}' resolved='{s}'", .{
+            base_path, file_path, resolved_path,
+        });
+        if (files.getIndex(resolved_path)) |imported_file_index| {
+            global_aliasee = FileIndex.findRootDecl(@enumFromInt(imported_file_index));
+            assert(global_aliasee != .none);
+            return .alias;
+        } else {
+            log.warn("import target '{s}' did not resolve to any file", .{resolved_path});
+        }
+    }
+
+    return .global_const;
 }
 
 export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Decl.Index) {
