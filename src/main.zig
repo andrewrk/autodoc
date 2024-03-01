@@ -611,6 +611,7 @@ export fn find_decl() Decl.Index {
     const g = struct {
         var match_fqn: std.ArrayListUnmanaged(u8) = .{};
     };
+    log.debug("find_decl '{s}'", .{input_string.items});
     for (decls.items, 0..) |*decl, decl_index| {
         decl_fqn_list(&g.match_fqn, decl) catch @panic("OOM");
         if (std.mem.eql(u8, g.match_fqn.items, input_string.items)) {
