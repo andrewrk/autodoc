@@ -49,8 +49,9 @@ what you want.
 
 ## Roadmap
 
-* add source view links, currently you have to navigate to e.g.
-  `#src/std.fs.File` to get to the source view.
+* struct field doc comments
+* type links in struct fields
+* add source view links, currently you have to use the keyboard shortcut
 * source view - resolve single identifier lookups using in-scope names
   - if it targets an alias then jump to the alias
   - if it is field access then resolve the alias of the LHS
@@ -58,7 +59,6 @@ what you want.
 * source view - newlines showing up in links
 * source view - make identifier links style subtler so it still looks like source
 * detect if it's the root package file and skip the top of the nav
-* render struct fields
 * include struct fields in search query matching
 * functions + ability to expand source of only that function without leaving the page
 * follow imports for better categorization
