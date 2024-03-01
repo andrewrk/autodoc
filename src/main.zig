@@ -874,7 +874,7 @@ fn decl_source_html_fallible(out: *std.ArrayListUnmanaged(u8), decl_index: Decl.
     var cursor: usize = 0;
     var prev_token_tag: std.zig.Token.Tag = undefined;
 
-    for (token_tags, token_starts) |tag, start| {
+    for (token_tags, token_starts, 0..) |tag, start, token_index| {
         const slice = ast.source[cursor..start];
         if (slice.len > 0) {
             switch (prev_token_tag) {
@@ -974,43 +974,32 @@ fn decl_source_html_fallible(out: *std.ArrayListUnmanaged(u8), decl_index: Decl.
                 },
 
                 .identifier => {
-                    try appendEscaped(out, slice);
+                    if (std.mem.eql(u8, slice, "undefined") or
+                        std.mem.eql(u8, slice, "null") or
+                        std.mem.eql(u8, slice, "true") or
+                        std.mem.eql(u8, slice, "false"))
+                    {
+                        try out.appendSlice(gpa, "<span class=\"tok-null\">");
+                        try appendEscaped(out, slice);
+                        try out.appendSlice(gpa, "</span>");
+                    } else if (std.zig.primitives.isPrimitive(slice)) {
+                        try out.appendSlice(gpa, "<span class=\"tok-type\">");
+                        try appendEscaped(out, slice);
+                        try out.appendSlice(gpa, "</span>");
+                    } else if (walk.token_links.get(token_index - 1)) |opt_link| {
+                        if (opt_link) |link| {
+                            try out.appendSlice(gpa, "<a href=\"#");
+                            try out.appendSlice(gpa, link); // TODO url escape
+                            try out.appendSlice(gpa, "\">");
+                            try appendEscaped(out, slice);
+                            try out.appendSlice(gpa, "</a>");
+                        } else {
+                            try appendEscaped(out, slice);
+                        }
+                    } else {
+                        try appendEscaped(out, slice);
+                    }
                 },
-                //.identifier => {
-                //    if (mem.eql(u8, slice, "undefined") or
-                //        mem.eql(u8, slice, "null") or
-                //        mem.eql(u8, slice, "true") or
-                //        mem.eql(u8, slice, "false"))
-                //    {
-                //        try out.appendSlice(gpa, "<span class=\"tok-null\">");
-                //        try appendEscaped(out, slice);
-                //        try out.appendSlice(gpa, "</span>");
-                //    } else if (prev_tok_was_fn) {
-                //        try out.appendSlice(gpa, "<span class=\"tok-fn\">");
-                //        try appendEscaped(out, slice);
-                //        try out.appendSlice(gpa, "</span>");
-                //    } else {
-                //        const is_int = blk: {
-                //            if (src[token.loc.start] != 'i' and src[token.loc.start] != 'u')
-                //                break :blk false;
-                //            var i = token.loc.start + 1;
-                //            if (i == token.loc.end)
-                //                break :blk false;
-                //            while (i != token.loc.end) : (i += 1) {
-                //                if (src[i] < '0' or src[i] > '9')
-                //                    break :blk false;
-                //            }
-                //            break :blk true;
-                //        };
-                //        if (is_int or isType(slice)) {
-                //            try out.appendSlice(gpa, "<span class=\"tok-type\">");
-                //            try appendEscaped(out, slice);
-                //            try out.appendSlice(gpa, "</span>");
-                //        } else {
-                //            try appendEscaped(out, slice);
-                //        }
-                //    }
-                //},
 
                 .number_literal => {
                     try out.appendSlice(gpa, "<span class=\"tok-number\">");

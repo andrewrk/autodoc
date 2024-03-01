@@ -34,8 +34,13 @@ and put it also into `zig-out/`.
 
 ## Roadmap
 
+* source view - resolve single identifier lookups using in-scope names
+  - if it targets an alias then jump to the alias
+  - if it is field access then resolve the alias of the LHS
+* source view - resolve identifier links to locals to link to the local decl
+* source view - newlines showing up in links
+* source view - make identifier links style subtler so it still looks like source
 * nav bar
-* file listings
 * detect if it's the root package file and skip the top of the nav
 * delete the left column
 * struct fields
