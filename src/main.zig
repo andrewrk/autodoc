@@ -13,6 +13,10 @@ const js = struct {
     extern "js" fn panic(ptr: [*]const u8, len: usize) noreturn;
 };
 
+pub const os = struct {
+    pub const PATH_MAX = 1024;
+};
+
 pub const std_options: std.Options = .{
     .logFn = logFn,
     //.log_level = .debug,
@@ -425,12 +429,10 @@ const Oom = error{OutOfMemory};
 
 fn unpack_inner(tar_bytes: []u8) !void {
     var fbs = std.io.fixedBufferStream(tar_bytes);
-    var file_name_buffer: [1024]u8 = undefined;
-    var link_name_buffer: [1024]u8 = undefined;
-    var it = std.tar.iterator(fbs.reader(), .{
-        .file_name_buffer = &file_name_buffer,
-        .link_name_buffer = &link_name_buffer,
-    });
+    var diag_buf: [2048]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&diag_buf);
+    var diagnostics = .{ .allocator = fba.allocator() };
+    var it = std.tar.iterator(fbs.reader(), &diagnostics);
     while (try it.next()) |file| {
         switch (file.kind) {
             .normal => {
