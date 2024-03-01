@@ -5,7 +5,11 @@ package documentation.
 
 ## Status
 
-It's at the proof-of-concept stage. Not polished yet.
+It's at the proof-of-concept stage. Not feature complete, let alone polished.
+
+However, based on these results, I expect this to be a better way forward than
+a ZIR-based documentation generation system. This system already has source
+listings for every file with links back to the API docs, for example.
 
 ## Development
 
@@ -30,10 +34,23 @@ python -m http.server
 ```
 
 Finally, create the tarball to serve as the input file, name it `sources.tar`,
-and put it also into `zig-out/`.
+and put it also into `zig-out/`. The system expects the top level of the
+tarball to be the set of packages documented. So for the Zig standard library
+you would do this: `tar cf std.tar std/`. Don't compress it; the idea is to
+rely on HTTP compression.
+
+I also suggest to omit test fixtures and test files. In other words, use the
+set of files that zig installs to zig-out when you run `zig build`, which is
+the same as the set of files that are provided on ziglang.org/download.
+
+If the system doesn't find a file named "foo/root.zig" or "foo/foo.zig" it's going
+to use the first file in the tar as the package root, which is probably not
+what you want.
 
 ## Roadmap
 
+* add source view links, currently you have to navigate to e.g.
+  `#src/std.fs.File` to get to the source view.
 * source view - resolve single identifier lookups using in-scope names
   - if it targets an alias then jump to the alias
   - if it is field access then resolve the alias of the LHS
@@ -44,6 +61,7 @@ and put it also into `zig-out/`.
 * detect if it's the root package file and skip the top of the nav
 * delete the left column
 * struct fields
+* functions + ability to expand source of only that function without leaving the page
 * follow imports for better categorization
 * doctests
 * setting for displaying private parts
