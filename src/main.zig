@@ -208,6 +208,14 @@ fn Slice(T: type) type {
 
 var string_result: std.ArrayListUnmanaged(u8) = .{};
 
+export fn decl_source_html(decl_index: Decl.Index) String {
+    string_result.clearRetainingCapacity();
+    decl_source_html_fallible(&string_result, decl_index) catch |err| {
+        fatal("unable to render source: {s}", .{@errorName(err)});
+    };
+    return String.init(string_result.items);
+}
+
 export fn decl_fqn(decl_index: Decl.Index) String {
     const decl = &decls.items[@intFromEnum(decl_index)];
     decl_fqn_list(&string_result, decl) catch @panic("OOM");
@@ -623,6 +631,7 @@ const Category = enum(u8) {
     primitive_true,
     primitive_false,
     primitive_null,
+    primitive_undefined,
     alias,
 };
 
@@ -690,6 +699,8 @@ fn categorize_expr(file_index: FileIndex, node: Ast.Node.Index) Category {
                 return .primitive_false;
             } else if (std.mem.eql(u8, ident_name, "null")) {
                 return .primitive_null;
+            } else if (std.mem.eql(u8, ident_name, "undefined")) {
+                return .primitive_undefined;
             } else if (std.zig.primitives.isPrimitive(ident_name)) {
                 return .type;
             }
@@ -779,32 +790,315 @@ export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Dec
     return Slice(Decl.Index).init(g.members.items);
 }
 
-fn render_markdown(dest: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
+fn render_markdown(out: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
     // TODO implement a custom markdown renderer
     // resist urge to use a third party implementation
     // this implementation will have zig specific tweaks such as inserting links
     // syntax highlighting, recognizing identifiers even outside of backticks, etc.
-    dest.clearRetainingCapacity();
-    for (input) |c| {
-        try dest.ensureUnusedCapacity(gpa, 6);
-        switch (c) {
-            '&' => dest.appendSliceAssumeCapacity("&amp;"),
-            '<' => dest.appendSliceAssumeCapacity("&lt;"),
-            '>' => dest.appendSliceAssumeCapacity("&gt;"),
-            '"' => dest.appendSliceAssumeCapacity("&quot;"),
-            else => dest.appendAssumeCapacity(c),
+    out.clearRetainingCapacity();
+    try appendEscaped(out, input);
+}
+
+const Walk = struct {
+    arena: std.mem.Allocator,
+    node_links: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, ?[]const u8),
+    token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, ?[]const u8),
+    ast: *const Ast,
+
+    fn node_link(w: *Walk, node: Ast.Node.Index) !?[]const u8 {
+        const ast = w.ast;
+        const arena = w.arena;
+        const node_tags = ast.nodes.items(.tag);
+        const main_tokens = ast.nodes.items(.main_token);
+
+        switch (node_tags[node]) {
+            .field_access => {
+                if (w.node_links.get(node)) |result| return result;
+
+                const node_datas = ast.nodes.items(.data);
+                const object_node = node_datas[node].lhs;
+                const dot_token = main_tokens[node];
+                const field_ident = dot_token + 1;
+                const ident_name = ast.tokenSlice(field_ident);
+                if (try w.node_link(object_node)) |lhs| {
+                    const rhs_link = try std.fmt.allocPrint(w.arena, "{s}.{s}", .{ lhs, ident_name });
+                    try w.token_links.put(arena, field_ident, rhs_link);
+                    try w.node_links.put(arena, node, rhs_link);
+                    return rhs_link;
+                } else {
+                    try w.node_links.put(arena, node, null);
+                    return null;
+                }
+            },
+            .identifier => {
+                if (w.node_links.get(node)) |result| return result;
+
+                const ident_token = main_tokens[node];
+                const ident_name = ast.tokenSlice(ident_token);
+                try w.token_links.put(arena, ident_token, ident_name);
+                try w.node_links.put(arena, node, ident_name);
+                return ident_name;
+            },
+            else => return null,
         }
+    }
+};
+
+fn decl_source_html_fallible(out: *std.ArrayListUnmanaged(u8), decl_index: Decl.Index) !void {
+    const decl = &decls.items[@intFromEnum(decl_index)];
+    const ast = &files.values()[@intFromEnum(decl.file)];
+
+    // Walk the tree to find the interesting nodes we want to annotate.
+    var arena_instance = std.heap.ArenaAllocator.init(gpa);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
+
+    var walk: Walk = .{
+        .arena = arena,
+        .node_links = .{},
+        .token_links = .{},
+        .ast = ast,
+    };
+
+    const node_tags = ast.nodes.items(.tag);
+    for (node_tags, 0..) |node_tag, node| {
+        switch (node_tag) {
+            .field_access, .identifier => _ = try walk.node_link(node),
+            else => continue,
+        }
+    }
+
+    const token_tags = ast.tokens.items(.tag);
+    const token_starts = ast.tokens.items(.start);
+
+    var cursor: usize = 0;
+    var prev_token_tag: std.zig.Token.Tag = undefined;
+
+    for (token_tags, token_starts) |tag, start| {
+        const slice = ast.source[cursor..start];
+        if (slice.len > 0) {
+            switch (prev_token_tag) {
+                .eof => unreachable,
+
+                .keyword_addrspace,
+                .keyword_align,
+                .keyword_and,
+                .keyword_asm,
+                .keyword_async,
+                .keyword_await,
+                .keyword_break,
+                .keyword_catch,
+                .keyword_comptime,
+                .keyword_const,
+                .keyword_continue,
+                .keyword_defer,
+                .keyword_else,
+                .keyword_enum,
+                .keyword_errdefer,
+                .keyword_error,
+                .keyword_export,
+                .keyword_extern,
+                .keyword_for,
+                .keyword_if,
+                .keyword_inline,
+                .keyword_noalias,
+                .keyword_noinline,
+                .keyword_nosuspend,
+                .keyword_opaque,
+                .keyword_or,
+                .keyword_orelse,
+                .keyword_packed,
+                .keyword_anyframe,
+                .keyword_pub,
+                .keyword_resume,
+                .keyword_return,
+                .keyword_linksection,
+                .keyword_callconv,
+                .keyword_struct,
+                .keyword_suspend,
+                .keyword_switch,
+                .keyword_test,
+                .keyword_threadlocal,
+                .keyword_try,
+                .keyword_union,
+                .keyword_unreachable,
+                .keyword_usingnamespace,
+                .keyword_var,
+                .keyword_volatile,
+                .keyword_allowzero,
+                .keyword_while,
+                .keyword_anytype,
+                .keyword_fn,
+                => {
+                    try out.appendSlice(gpa, "<span class=\"tok-kw\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                },
+
+                .string_literal,
+                .char_literal,
+                => {
+                    try out.appendSlice(gpa, "<span class=\"tok-str\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                },
+
+                .multiline_string_literal_line => {
+                    try appendEscaped(out, slice);
+                },
+                //.multiline_string_literal_line => {
+                //    if (src[token.loc.end - 1] == '\n') {
+                //        try out.appendSlice(gpa, "<span class=\"tok-str\">");
+                //        try appendEscaped(out, src[token.loc.start .. token.loc.end - 1]);
+                //        line_counter += 1;
+                //        try out.print("</span>" ++ end_line ++ "\n" ++ start_line, .{line_counter});
+                //    } else {
+                //        try out.appendSlice(gpa, "<span class=\"tok-str\">");
+                //        try appendEscaped(out, src[token.loc.start..token.loc.end]);
+                //        try out.appendSlice(gpa, "</span>");
+                //    }
+                //},
+
+                .builtin => {
+                    try out.appendSlice(gpa, "<span class=\"tok-builtin\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                },
+
+                .doc_comment,
+                .container_doc_comment,
+                => {
+                    try out.appendSlice(gpa, "<span class=\"tok-comment\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                },
+
+                .identifier => {
+                    try appendEscaped(out, slice);
+                },
+                //.identifier => {
+                //    if (mem.eql(u8, slice, "undefined") or
+                //        mem.eql(u8, slice, "null") or
+                //        mem.eql(u8, slice, "true") or
+                //        mem.eql(u8, slice, "false"))
+                //    {
+                //        try out.appendSlice(gpa, "<span class=\"tok-null\">");
+                //        try appendEscaped(out, slice);
+                //        try out.appendSlice(gpa, "</span>");
+                //    } else if (prev_tok_was_fn) {
+                //        try out.appendSlice(gpa, "<span class=\"tok-fn\">");
+                //        try appendEscaped(out, slice);
+                //        try out.appendSlice(gpa, "</span>");
+                //    } else {
+                //        const is_int = blk: {
+                //            if (src[token.loc.start] != 'i' and src[token.loc.start] != 'u')
+                //                break :blk false;
+                //            var i = token.loc.start + 1;
+                //            if (i == token.loc.end)
+                //                break :blk false;
+                //            while (i != token.loc.end) : (i += 1) {
+                //                if (src[i] < '0' or src[i] > '9')
+                //                    break :blk false;
+                //            }
+                //            break :blk true;
+                //        };
+                //        if (is_int or isType(slice)) {
+                //            try out.appendSlice(gpa, "<span class=\"tok-type\">");
+                //            try appendEscaped(out, slice);
+                //            try out.appendSlice(gpa, "</span>");
+                //        } else {
+                //            try appendEscaped(out, slice);
+                //        }
+                //    }
+                //},
+
+                .number_literal => {
+                    try out.appendSlice(gpa, "<span class=\"tok-number\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                },
+
+                .bang,
+                .pipe,
+                .pipe_pipe,
+                .pipe_equal,
+                .equal,
+                .equal_equal,
+                .equal_angle_bracket_right,
+                .bang_equal,
+                .l_paren,
+                .r_paren,
+                .semicolon,
+                .percent,
+                .percent_equal,
+                .l_brace,
+                .r_brace,
+                .l_bracket,
+                .r_bracket,
+                .period,
+                .period_asterisk,
+                .ellipsis2,
+                .ellipsis3,
+                .caret,
+                .caret_equal,
+                .plus,
+                .plus_plus,
+                .plus_equal,
+                .plus_percent,
+                .plus_percent_equal,
+                .plus_pipe,
+                .plus_pipe_equal,
+                .minus,
+                .minus_equal,
+                .minus_percent,
+                .minus_percent_equal,
+                .minus_pipe,
+                .minus_pipe_equal,
+                .asterisk,
+                .asterisk_equal,
+                .asterisk_asterisk,
+                .asterisk_percent,
+                .asterisk_percent_equal,
+                .asterisk_pipe,
+                .asterisk_pipe_equal,
+                .arrow,
+                .colon,
+                .slash,
+                .slash_equal,
+                .comma,
+                .ampersand,
+                .ampersand_equal,
+                .question_mark,
+                .angle_bracket_left,
+                .angle_bracket_left_equal,
+                .angle_bracket_angle_bracket_left,
+                .angle_bracket_angle_bracket_left_equal,
+                .angle_bracket_angle_bracket_left_pipe,
+                .angle_bracket_angle_bracket_left_pipe_equal,
+                .angle_bracket_right,
+                .angle_bracket_right_equal,
+                .angle_bracket_angle_bracket_right,
+                .angle_bracket_angle_bracket_right_equal,
+                .tilde,
+                => try appendEscaped(out, slice),
+
+                .invalid, .invalid_periodasterisks => return error.InvalidToken,
+            }
+        }
+        cursor = start;
+        prev_token_tag = tag;
     }
 }
 
-fn writeEscaped(out: anytype, input: []const u8) !void {
-    for (input) |c| {
-        try switch (c) {
-            '&' => out.writeAll("&amp;"),
-            '<' => out.writeAll("&lt;"),
-            '>' => out.writeAll("&gt;"),
-            '"' => out.writeAll("&quot;"),
-            else => out.writeByte(c),
-        };
+fn appendEscaped(out: *std.ArrayListUnmanaged(u8), s: []const u8) !void {
+    for (s) |c| {
+        try out.ensureUnusedCapacity(gpa, 6);
+        switch (c) {
+            '&' => out.appendSliceAssumeCapacity("&amp;"),
+            '<' => out.appendSliceAssumeCapacity("&lt;"),
+            '>' => out.appendSliceAssumeCapacity("&gt;"),
+            '"' => out.appendSliceAssumeCapacity("&quot;"),
+            else => out.appendAssumeCapacity(c),
+        }
     }
 }
