@@ -26,13 +26,16 @@
         font-family:"Source Code Pro",monospace;
         font-size:1em;
       }
+
+      #navWrap {
+        float: left;
+        width: 47em;
+        margin-left: 1em;
+      }
+
       nav {
         width: 10em;
-        position: fixed;
-        left: 0;
-        top: 0;
-        height: 100vh;
-        overflow: auto;
+        float: left;
       }
       nav h2 {
         font-size: 1.2em;
@@ -45,9 +48,6 @@
         margin: 0;
         padding: 0;
         text-align: center;
-      }
-      section {
-        margin-left: 10em;
       }
       section h1 {
         border-bottom: 1px dashed;
@@ -275,10 +275,12 @@
         </svg>
       </div>
     </nav>
-    <section>
-    <input type="search" id="search" autocomplete="off" spellcheck="false" placeholder="`s` to search, `?` to see more options">
+    <div id="navWrap">
+      <input type="search" id="search" autocomplete="off" spellcheck="false" placeholder="`s` to search, `?` to see more options">
+      <div id="sectNav" class="hidden"><ul id="listNav"></ul></div>
+    </div>
+    <section style="clear: both">
     <p id="status">Loading...</p>
-    <div id="sectNav" class="hidden"><ul id="listNav"></ul></div>
     <div id="fnProto" class="hidden">
       <pre id="fnProtoCode"></pre>
     </div>
