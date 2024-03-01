@@ -270,7 +270,9 @@ fn collect_docs(
     list.clearRetainingCapacity();
     var it = first_doc_comment;
     while (token_tags[it] == .doc_comment) : (it += 1) {
-        const line = std.mem.trim(u8, ast.tokenSlice(it)[3..], " \t\r");
+        // It is tempting to trim this string but think carefully about how
+        // that will affect the markdown parser.
+        const line = ast.tokenSlice(it)[3..];
         try list.appendSlice(gpa, line);
     }
 }
@@ -336,6 +338,10 @@ const Decl = struct {
     fn add(d: Decl) !Index {
         try decls.append(gpa, d);
         return @enumFromInt(decls.items.len - 1);
+    }
+
+    fn is_pub(d: *const Decl) bool {
+        return d.extra_info().is_pub;
     }
 
     fn extra_info(d: *const Decl) ExtraInfo {
@@ -764,8 +770,9 @@ export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Dec
 
     for (decls.items, 0..) |*decl, i| {
         if (decl.parent == parent) {
-            assert(!include_private); // TODO implement this
-            g.members.append(gpa, @enumFromInt(i)) catch @panic("OOM");
+            if (include_private or decl.is_pub()) {
+                g.members.append(gpa, @enumFromInt(i)) catch @panic("OOM");
+            }
         }
     }
 

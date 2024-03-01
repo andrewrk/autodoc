@@ -36,6 +36,7 @@ and put it also into `zig-out/`.
 
 * nav bar
 * file listings
+* detect if it's the root package file and skip the top of the nav
 * delete the left column
 * struct fields
 * follow imports for better categorization
