@@ -109,8 +109,8 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
         try g.full_path_search_text_lower.resize(gpa, g.full_path_search_text.items.len);
         @memcpy(g.full_path_search_text_lower.items, g.full_path_search_text.items);
 
-        // TODO doc comment finding
-        try g.doc_search_text.resize(gpa, 0);
+        const ast = &files.values()[@intFromEnum(decl.file)];
+        try collect_docs(&g.doc_search_text, ast, info.first_doc_comment);
 
         if (ignore_case) {
             ascii_lower(g.full_path_search_text_lower.items);
@@ -226,17 +226,34 @@ export fn decl_name(decl_index: Decl.Index) String {
 }
 
 export fn decl_docs_html(decl_index: Decl.Index, short: bool) String {
+    const g = struct {
+        var markdown_input: std.ArrayListUnmanaged(u8) = .{};
+    };
     const decl = &decls.items[@intFromEnum(decl_index)];
     const ast = &files.values()[@intFromEnum(decl.file)];
+    collect_docs(&g.markdown_input, ast, decl.extra_info().first_doc_comment) catch @panic("OOM");
+    const chomped = c: {
+        const s = g.markdown_input.items;
+        if (!short) break :c s;
+        const nl = std.mem.indexOfScalar(u8, s, '\n') orelse s.len;
+        break :c s[0..nl];
+    };
+    render_markdown(&string_result, chomped) catch @panic("OOM");
+    return String.init(string_result.items);
+}
+
+fn collect_docs(
+    list: *std.ArrayListUnmanaged(u8),
+    ast: *const Ast,
+    first_doc_comment: Ast.TokenIndex,
+) Oom!void {
     const token_tags = ast.tokens.items(.tag);
-    string_result.clearRetainingCapacity();
-    var it = decl.extra_info().first_doc_comment;
+    list.clearRetainingCapacity();
+    var it = first_doc_comment;
     while (token_tags[it] == .doc_comment) : (it += 1) {
         const line = std.mem.trim(u8, ast.tokenSlice(it)[3..], " \t\r");
-        string_result.appendSlice(gpa, line) catch @panic("OOM");
-        if (short) break;
+        try list.appendSlice(gpa, line);
     }
-    return String.init(string_result.items);
 }
 
 export fn decl_type_html(decl_index: Decl.Index) String {
@@ -633,4 +650,34 @@ export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Dec
     }
 
     return Slice(Decl.Index).init(g.members.items);
+}
+
+fn render_markdown(dest: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
+    // TODO implement a custom markdown renderer
+    // resist urge to use a third party implementation
+    // this implementation will have zig specific tweaks such as inserting links
+    // syntax highlighting, recognizing identifiers even outside of backticks, etc.
+    dest.clearRetainingCapacity();
+    for (input) |c| {
+        try dest.ensureUnusedCapacity(gpa, 6);
+        switch (c) {
+            '&' => dest.appendSliceAssumeCapacity("&amp;"),
+            '<' => dest.appendSliceAssumeCapacity("&lt;"),
+            '>' => dest.appendSliceAssumeCapacity("&gt;"),
+            '"' => dest.appendSliceAssumeCapacity("&quot;"),
+            else => dest.appendAssumeCapacity(c),
+        }
+    }
+}
+
+fn writeEscaped(out: anytype, input: []const u8) !void {
+    for (input) |c| {
+        try switch (c) {
+            '&' => out.writeAll("&amp;"),
+            '<' => out.writeAll("&lt;"),
+            '>' => out.writeAll("&gt;"),
+            '"' => out.writeAll("&quot;"),
+            else => out.writeByte(c),
+        };
+    }
 }
