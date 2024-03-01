@@ -210,15 +210,18 @@ var string_result: std.ArrayListUnmanaged(u8) = .{};
 
 export fn decl_fqn(decl_index: Decl.Index) String {
     const decl = &decls.items[@intFromEnum(decl_index)];
-    reset_with_file_path(&string_result, decl.file_path()) catch @panic("OOM");
-    if (decl.parent != .none) {
-        append_parent_ns(&string_result, decl.parent) catch @panic("OOM");
-        string_result.appendSlice(gpa, decl.extra_info().name) catch @panic("OOM");
-    } else {
-        string_result.items.len -= 1; // remove the trailing '.'
-    }
-
+    decl_fqn_list(&string_result, decl) catch @panic("OOM");
     return String.init(string_result.items);
+}
+
+fn decl_fqn_list(list: *std.ArrayListUnmanaged(u8), decl: *const Decl) Oom!void {
+    try reset_with_file_path(list, decl.file_path());
+    if (decl.parent != .none) {
+        try append_parent_ns(list, decl.parent);
+        try list.appendSlice(gpa, decl.extra_info().name);
+    } else {
+        list.items.len -= 1; // remove the trailing '.'
+    }
 }
 
 export fn decl_name(decl_index: Decl.Index) String {
@@ -552,8 +555,11 @@ fn index_expr(file_index: FileIndex, parent_decl: Decl.Index, node: Ast.Node.Ind
 }
 
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
-    const line = std.fmt.allocPrint(gpa, format, args) catch @panic("OOM");
-    defer gpa.free(line);
+    var buf: [500]u8 = undefined;
+    const line = std.fmt.bufPrint(&buf, format, args) catch l: {
+        buf[buf.len - 3 ..][0..3].* = "...".*;
+        break :l &buf;
+    };
     js.panic(line.ptr, line.len);
 }
 
@@ -571,6 +577,28 @@ export fn find_package_root(pkg: PackageIndex) Decl.Index {
     const result = root_file.findRootDecl();
     assert(result != .none);
     return result;
+}
+
+/// Set by `set_input_string`.
+var input_string: std.ArrayListUnmanaged(u8) = .{};
+
+export fn set_input_string(len: usize) [*]u8 {
+    input_string.resize(gpa, len) catch @panic("OOM");
+    return input_string.items.ptr;
+}
+
+/// Uses `input_string`.
+export fn find_decl() Decl.Index {
+    const g = struct {
+        var match_fqn: std.ArrayListUnmanaged(u8) = .{};
+    };
+    for (decls.items, 0..) |*decl, decl_index| {
+        decl_fqn_list(&g.match_fqn, decl) catch @panic("OOM");
+        if (std.mem.eql(u8, g.match_fqn.items, input_string.items)) {
+            return @enumFromInt(decl_index);
+        }
+    }
+    return .none;
 }
 
 /// keep in sync with "CAT_" constants in main.js

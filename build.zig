@@ -34,16 +34,18 @@ pub fn build(b: *std.Build) void {
     wasm.root_module.export_symbol_names = &.{
         "alloc",
         "categorize_decl",
-        "get_aliasee",
         "decl_docs_html",
         "decl_fqn",
         "decl_name",
         "decl_type_html",
+        "find_decl",
         "find_package_root",
+        "get_aliasee",
         "namespace_members",
         "package_name",
         "query_begin",
         "query_exec",
+        "set_input_string",
         "unpack",
     };
     wasm.entry = .disabled;

@@ -34,7 +34,9 @@ and put it also into `zig-out/`.
 
 ## Roadmap
 
+* nav bar
 * file listings
+* delete the left column
 * struct fields
 * follow imports for better categorization
 * doctests
