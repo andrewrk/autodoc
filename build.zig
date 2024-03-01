@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) void {
         "decl_docs_html",
         "decl_fqn",
         "decl_name",
+        "decl_parent",
         "decl_type_html",
         "find_decl",
         "find_package_root",

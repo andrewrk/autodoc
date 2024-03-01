@@ -224,6 +224,11 @@ fn decl_fqn_list(list: *std.ArrayListUnmanaged(u8), decl: *const Decl) Oom!void 
     }
 }
 
+export fn decl_parent(decl_index: Decl.Index) Decl.Index {
+    const decl = &decls.items[@intFromEnum(decl_index)];
+    return decl.parent;
+}
+
 export fn decl_name(decl_index: Decl.Index) String {
     const decl = &decls.items[@intFromEnum(decl_index)];
     string_result.clearRetainingCapacity();
