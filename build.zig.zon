@@ -2,7 +2,7 @@
     .name = "autodoc",
     .version = "0.0.0",
 
-    .minimum_zig_version = "0.12.0-dev.3083+9410b11ca",
+    .minimum_zig_version = "0.12.0-dev.3097+5c0766b6c",
 
     .paths = .{
         "build.zig",
