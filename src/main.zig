@@ -8,6 +8,10 @@ const log = std.log;
 const assert = std.debug.assert;
 const Ast = std.zig.Ast;
 
+pub const os = struct {
+    pub const PATH_MAX = 1024;
+};
+
 const js = struct {
     extern "js" fn log(ptr: [*]const u8, len: usize) void;
     extern "js" fn panic(ptr: [*]const u8, len: usize) noreturn;
@@ -425,12 +429,10 @@ const Oom = error{OutOfMemory};
 
 fn unpack_inner(tar_bytes: []u8) !void {
     var fbs = std.io.fixedBufferStream(tar_bytes);
-    var file_name_buffer: [1024]u8 = undefined;
-    var link_name_buffer: [1024]u8 = undefined;
-    var it = std.tar.iterator(fbs.reader(), .{
-        .file_name_buffer = &file_name_buffer,
-        .link_name_buffer = &link_name_buffer,
-    });
+    var diag_buf: [2048]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&diag_buf);
+    var diagnostics = .{ .allocator = fba.allocator() };
+    var it = std.tar.iterator(fbs.reader(), &diagnostics);
     while (try it.next()) |file| {
         switch (file.kind) {
             .normal => {
@@ -991,14 +993,24 @@ fn decl_source_html_fallible(out: *std.ArrayListUnmanaged(u8), decl_index: Decl.
                         if (opt_link) |link| {
                             try out.appendSlice(gpa, "<a href=\"#");
                             try out.appendSlice(gpa, link); // TODO url escape
-                            try out.appendSlice(gpa, "\">");
+                            try out.appendSlice(gpa, "\" class=\"tok-ident\">");
                             try appendEscaped(out, slice);
                             try out.appendSlice(gpa, "</a>");
                         } else {
+                            try out.appendSlice(gpa, "<span class=\"tok-ident\">");
                             try appendEscaped(out, slice);
+                            try out.appendSlice(gpa, "</span>");
                         }
                     } else {
+                        const tok_class = if (token_tags[token_index - 2] == .keyword_fn)
+                            "tok-fn"
+                        else
+                            "tok-ident";
+                        try out.appendSlice(gpa, "<span class=\"");
+                        try out.appendSlice(gpa, tok_class);
+                        try out.appendSlice(gpa, "\">");
                         try appendEscaped(out, slice);
+                        try out.appendSlice(gpa, "</span>");
                     }
                 },
 
