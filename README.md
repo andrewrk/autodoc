@@ -57,10 +57,9 @@ what you want.
 * source view - resolve identifier links to locals to link to the local decl
 * source view - newlines showing up in links
 * source view - make identifier links style subtler so it still looks like source
-* nav bar
 * detect if it's the root package file and skip the top of the nav
-* delete the left column
-* struct fields
+* render struct fields
+* include struct fields in search query matching
 * functions + ability to expand source of only that function without leaving the page
 * follow imports for better categorization
 * doctests

@@ -99,7 +99,7 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
     decl_loop: for (decls.items, 0..) |*decl, decl_index| {
         const info = decl.extra_info();
         if (!info.is_pub) continue;
-        const file_path = decl.file_path();
+        const file_path = decl.file.path();
 
         try reset_with_file_path(&g.full_path_search_text, file_path);
         if (decl.parent != .none)
@@ -109,7 +109,7 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
         try g.full_path_search_text_lower.resize(gpa, g.full_path_search_text.items.len);
         @memcpy(g.full_path_search_text_lower.items, g.full_path_search_text.items);
 
-        const ast = &files.values()[@intFromEnum(decl.file)];
+        const ast = decl.file.ast();
         try collect_docs(&g.doc_search_text, ast, info.first_doc_comment);
 
         if (ignore_case) {
@@ -167,8 +167,8 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
             } else {
                 const a_decl = query_results.items[a_index];
                 const b_decl = query_results.items[b_index];
-                const a_file_path = decls.items[@intFromEnum(a_decl)].file_path();
-                const b_file_path = decls.items[@intFromEnum(b_decl)].file_path();
+                const a_file_path = a_decl.get().file.path();
+                const b_file_path = b_decl.get().file.path();
                 // TODO Also check the local namespace  inside the file
                 return std.mem.lessThan(u8, b_file_path, a_file_path);
             }
@@ -183,7 +183,7 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
 
 fn append_parent_ns(list: *std.ArrayListUnmanaged(u8), parent: Decl.Index) Oom!void {
     assert(parent != .none);
-    const decl = &decls.items[@intFromEnum(parent)];
+    const decl = parent.get();
     if (decl.parent != .none) {
         try append_parent_ns(list, decl.parent);
         try list.append(gpa, '.');
@@ -208,22 +208,67 @@ fn Slice(T: type) type {
 
 var string_result: std.ArrayListUnmanaged(u8) = .{};
 
-export fn decl_source_html(decl_index: Decl.Index) String {
+export fn decl_fields(decl_index: Decl.Index) Slice(Ast.Node.Index) {
+    return Slice(Ast.Node.Index).init(decl_fields_fallible(decl_index) catch @panic("OOM"));
+}
+
+fn decl_fields_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
+    const g = struct {
+        var result: std.ArrayListUnmanaged(Ast.Node.Index) = .{};
+    };
+    g.result.clearRetainingCapacity();
+    const decl = decl_index.get();
+    const ast = decl.file.ast();
+    const node_tags = ast.nodes.items(.tag);
+    const value_node = decl.value_node() orelse return &.{};
+    var buf: [2]Ast.Node.Index = undefined;
+    const container_decl = ast.fullContainerDecl(&buf, value_node) orelse return &.{};
+    for (container_decl.ast.members) |member_node| switch (node_tags[member_node]) {
+        .container_field_init,
+        .container_field_align,
+        .container_field,
+        => try g.result.append(gpa, member_node),
+
+        else => continue,
+    };
+    return g.result.items;
+}
+
+export fn decl_field_html(decl_index: Decl.Index, field_node: Ast.Node.Index) String {
     string_result.clearRetainingCapacity();
-    decl_source_html_fallible(&string_result, decl_index) catch |err| {
+    decl_field_html_fallible(&string_result, decl_index, field_node) catch @panic("OOM");
+    return String.init(string_result.items);
+}
+
+fn decl_field_html_fallible(
+    out: *std.ArrayListUnmanaged(u8),
+    decl_index: Decl.Index,
+    field_node: Ast.Node.Index,
+) !void {
+    const decl = decl_index.get();
+    try out.appendSlice(gpa, "<pre><code>");
+    try decl.source_html_fallible(out, field_node);
+    try out.appendSlice(gpa, "</code></pre>");
+}
+
+export fn decl_source_html(decl_index: Decl.Index) String {
+    const decl = decl_index.get();
+
+    string_result.clearRetainingCapacity();
+    decl.source_html_fallible(&string_result, decl.ast_node) catch |err| {
         fatal("unable to render source: {s}", .{@errorName(err)});
     };
     return String.init(string_result.items);
 }
 
 export fn decl_fqn(decl_index: Decl.Index) String {
-    const decl = &decls.items[@intFromEnum(decl_index)];
+    const decl = decl_index.get();
     decl_fqn_list(&string_result, decl) catch @panic("OOM");
     return String.init(string_result.items);
 }
 
 fn decl_fqn_list(list: *std.ArrayListUnmanaged(u8), decl: *const Decl) Oom!void {
-    try reset_with_file_path(list, decl.file_path());
+    try reset_with_file_path(list, decl.file.path());
     if (decl.parent != .none) {
         try append_parent_ns(list, decl.parent);
         try list.appendSlice(gpa, decl.extra_info().name);
@@ -233,18 +278,23 @@ fn decl_fqn_list(list: *std.ArrayListUnmanaged(u8), decl: *const Decl) Oom!void 
 }
 
 export fn decl_parent(decl_index: Decl.Index) Decl.Index {
-    const decl = &decls.items[@intFromEnum(decl_index)];
+    const decl = decl_index.get();
     return decl.parent;
 }
 
+export fn decl_file_path(decl_index: Decl.Index) String {
+    string_result.clearRetainingCapacity();
+    string_result.appendSlice(gpa, decl_index.get().file.path()) catch @panic("OOM");
+    return String.init(string_result.items);
+}
+
 export fn decl_name(decl_index: Decl.Index) String {
-    const decl = &decls.items[@intFromEnum(decl_index)];
+    const decl = decl_index.get();
     string_result.clearRetainingCapacity();
     const name = n: {
         if (decl.parent == .none) {
             // Then it is the root struct of a file.
-            const file_path = files.keys()[@intFromEnum(decl.file)];
-            break :n std.fs.path.stem(file_path);
+            break :n std.fs.path.stem(decl.file.path());
         }
         break :n decl.extra_info().name;
     };
@@ -256,8 +306,8 @@ export fn decl_docs_html(decl_index: Decl.Index, short: bool) String {
     const g = struct {
         var markdown_input: std.ArrayListUnmanaged(u8) = .{};
     };
-    const decl = &decls.items[@intFromEnum(decl_index)];
-    const ast = &files.values()[@intFromEnum(decl.file)];
+    const decl = decl_index.get();
+    const ast = decl.file.ast();
     collect_docs(&g.markdown_input, ast, decl.extra_info().first_doc_comment) catch @panic("OOM");
     const chomped = c: {
         const s = g.markdown_input.items;
@@ -286,8 +336,8 @@ fn collect_docs(
 }
 
 export fn decl_type_html(decl_index: Decl.Index) String {
-    const decl = &decls.items[@intFromEnum(decl_index)];
-    const ast = &files.values()[@intFromEnum(decl.file)];
+    const decl = decl_index.get();
+    const ast = decl.file.ast();
     string_result.clearRetainingCapacity();
     _ = ast; // TODO
     string_result.appendSlice(gpa, "TODO_type_here") catch @panic("OOM");
@@ -311,6 +361,14 @@ fn reset_with_file_path(list: *std.ArrayListUnmanaged(u8), file_path: []const u8
 
 const FileIndex = enum(u32) {
     _,
+
+    fn path(i: FileIndex) []const u8 {
+        return files.keys()[@intFromEnum(i)];
+    }
+
+    fn ast(i: FileIndex) *Ast {
+        return &files.values()[@intFromEnum(i)];
+    }
 
     fn findRootDecl(file_index: FileIndex) Decl.Index {
         for (decls.items, 0..) |*decl, i| {
@@ -341,6 +399,10 @@ const Decl = struct {
     const Index = enum(u32) {
         none = std.math.maxInt(u32),
         _,
+
+        fn get(i: Index) *Decl {
+            return &decls.items[@intFromEnum(i)];
+        }
     };
 
     fn add(d: Decl) !Index {
@@ -353,7 +415,7 @@ const Decl = struct {
     }
 
     fn extra_info(d: *const Decl) ExtraInfo {
-        const ast = &files.values()[@intFromEnum(d.file)];
+        const ast = d.file.ast();
         const token_tags = ast.tokens.items(.tag);
         const node_tags = ast.nodes.items(.tag);
         switch (node_tags[d.ast_node]) {
@@ -404,481 +466,76 @@ const Decl = struct {
         }
     }
 
-    fn file_path(d: *const Decl) []const u8 {
-        return files.keys()[@intFromEnum(d.file)];
-    }
-};
-
-fn findFirstDocComment(ast: *const Ast, token: Ast.TokenIndex) Ast.TokenIndex {
-    const token_tags = ast.tokens.items(.tag);
-    var it = token;
-    while (it > 0) {
-        it -= 1;
-        if (token_tags[it] != .doc_comment) {
-            return it + 1;
-        }
-    }
-    return it;
-}
-
-const Oom = error{OutOfMemory};
-
-fn unpack_inner(tar_bytes: []u8) !void {
-    var fbs = std.io.fixedBufferStream(tar_bytes);
-    var file_name_buffer: [1024]u8 = undefined;
-    var link_name_buffer: [1024]u8 = undefined;
-    var it = std.tar.iterator(fbs.reader(), .{
-        .file_name_buffer = &file_name_buffer,
-        .link_name_buffer = &link_name_buffer,
-    });
-    while (try it.next()) |file| {
-        switch (file.kind) {
-            .normal => {
-                if (file.size == 0 and file.name.len == 0) break;
-                if (std.mem.endsWith(u8, file.name, ".zig")) {
-                    log.debug("found file: '{s}'", .{file.name});
-                    const file_name = try gpa.dupe(u8, file.name);
-                    if (std.mem.indexOfScalar(u8, file_name, '/')) |pkg_name_end| {
-                        const pkg_name = file_name[0..pkg_name_end];
-                        const gop = try packages.getOrPut(gpa, pkg_name);
-                        const file_index: FileIndex = @enumFromInt(files.entries.len);
-                        if (!gop.found_existing or
-                            std.mem.eql(u8, file_name[pkg_name_end..], "/root.zig") or
-                            std.mem.eql(u8, file_name[pkg_name_end + 1 .. file_name.len - ".zig".len], pkg_name))
-                        {
-                            gop.value_ptr.* = file_index;
-                        }
-                        const file_bytes = tar_bytes[fbs.pos..][0..@intCast(file.size)];
-                        const tree = try parse(file_bytes);
-                        try files.put(gpa, file_name, tree);
-                        try index_file(file_index);
-                    }
-                } else {
-                    log.warn("skipping: '{s}' - the tar creation should have done that", .{
-                        file.name,
-                    });
-                }
-                try file.skip();
-            },
-            else => continue,
-        }
-    }
-}
-
-fn parse(source: []u8) Oom!Ast {
-    // Require every source file to end with a newline so that Zig's tokenizer
-    // can continue to require null termination and Autodoc implementation can
-    // avoid copying source bytes from the decompressed tar file buffer.
-    const adjusted_source: [:0]const u8 = s: {
-        if (source.len == 0)
-            break :s "";
-
-        assert(source[source.len - 1] == '\n');
-        source[source.len - 1] = 0;
-        break :s source[0 .. source.len - 1 :0];
-    };
-
-    return Ast.parse(gpa, adjusted_source, .zig);
-}
-
-fn index_file(file_index: FileIndex) Oom!void {
-    const ast = &files.values()[@intFromEnum(file_index)];
-
-    if (ast.errors.len > 0) {
-        // TODO: expose this in the UI
-        log.err("can't index '{s}' because it has syntax errors", .{
-            files.keys()[@intFromEnum(file_index)],
-        });
-        return;
-    }
-
-    const root = ast.containerDeclRoot();
-    const decl_index = try Decl.add(.{
-        .ast_node = 0,
-        .file = file_index,
-        .parent = .none,
-    });
-    try index_namespace(file_index, decl_index, root);
-}
-
-fn index_namespace(
-    file_index: FileIndex,
-    parent_decl: Decl.Index,
-    container_decl: Ast.full.ContainerDecl,
-) Oom!void {
-    const ast = &files.values()[@intFromEnum(file_index)];
-    const node_tags = ast.nodes.items(.tag);
-
-    for (container_decl.ast.members) |member| {
-        switch (node_tags[member]) {
+    fn value_node(d: *const Decl) ?Ast.Node.Index {
+        const ast = d.file.ast();
+        const node_tags = ast.nodes.items(.tag);
+        const token_tags = ast.tokens.items(.tag);
+        return switch (node_tags[d.ast_node]) {
             .fn_proto,
             .fn_proto_multi,
             .fn_proto_one,
             .fn_proto_simple,
             .fn_decl,
-            => {
-                const decl_index = try Decl.add(.{
-                    .ast_node = member,
-                    .file = file_index,
-                    .parent = parent_decl,
-                });
-                _ = decl_index;
-            },
+            .root,
+            => d.ast_node,
 
             .global_var_decl,
             .local_var_decl,
             .simple_var_decl,
             .aligned_var_decl,
             => {
-                const decl_index = try Decl.add(.{
-                    .ast_node = member,
-                    .file = file_index,
-                    .parent = parent_decl,
-                });
-                const var_decl = ast.fullVarDecl(member).?;
-                try index_expr(file_index, decl_index, var_decl.ast.init_node);
+                const var_decl = ast.fullVarDecl(d.ast_node).?;
+                if (token_tags[var_decl.ast.mut_token] == .keyword_const)
+                    return var_decl.ast.init_node;
+
+                return null;
             },
 
-            .test_decl => {
-                // TODO look for doctests
-            },
-
-            else => continue,
-        }
-    }
-}
-
-fn index_expr(file_index: FileIndex, parent_decl: Decl.Index, node: Ast.Node.Index) Oom!void {
-    const ast = &files.values()[@intFromEnum(file_index)];
-    const node_tags = ast.nodes.items(.tag);
-    switch (node_tags[node]) {
-        .container_decl,
-        .container_decl_trailing,
-        .container_decl_arg,
-        .container_decl_arg_trailing,
-        .container_decl_two,
-        .container_decl_two_trailing,
-        .tagged_union,
-        .tagged_union_trailing,
-        .tagged_union_enum_tag,
-        .tagged_union_enum_tag_trailing,
-        .tagged_union_two,
-        .tagged_union_two_trailing,
-        => {
-            var buf: [2]Ast.Node.Index = undefined;
-            try index_namespace(file_index, parent_decl, ast.fullContainerDecl(&buf, node).?);
-        },
-
-        else => return,
-    }
-}
-
-fn fatal(comptime format: []const u8, args: anytype) noreturn {
-    var buf: [500]u8 = undefined;
-    const line = std.fmt.bufPrint(&buf, format, args) catch l: {
-        buf[buf.len - 3 ..][0..3].* = "...".*;
-        break :l &buf;
-    };
-    js.panic(line.ptr, line.len);
-}
-
-fn ascii_lower(bytes: []u8) void {
-    for (bytes) |*b| b.* = std.ascii.toLower(b.*);
-}
-
-export fn package_name(index: u32) String {
-    const names = packages.keys();
-    return String.init(if (index >= names.len) "" else names[index]);
-}
-
-export fn find_package_root(pkg: PackageIndex) Decl.Index {
-    const root_file = packages.values()[@intFromEnum(pkg)];
-    const result = root_file.findRootDecl();
-    assert(result != .none);
-    return result;
-}
-
-/// Set by `set_input_string`.
-var input_string: std.ArrayListUnmanaged(u8) = .{};
-
-export fn set_input_string(len: usize) [*]u8 {
-    input_string.resize(gpa, len) catch @panic("OOM");
-    return input_string.items.ptr;
-}
-
-/// Uses `input_string`.
-export fn find_decl() Decl.Index {
-    const g = struct {
-        var match_fqn: std.ArrayListUnmanaged(u8) = .{};
-    };
-    log.debug("find_decl '{s}'", .{input_string.items});
-    for (decls.items, 0..) |*decl, decl_index| {
-        decl_fqn_list(&g.match_fqn, decl) catch @panic("OOM");
-        if (std.mem.eql(u8, g.match_fqn.items, input_string.items)) {
-            return @enumFromInt(decl_index);
-        }
-    }
-    return .none;
-}
-
-/// keep in sync with "CAT_" constants in main.js
-const Category = enum(u8) {
-    namespace,
-    global_variable,
-    function,
-    type,
-    error_set,
-    global_const,
-    primitive_true,
-    primitive_false,
-    primitive_null,
-    primitive_undefined,
-    alias,
-};
-
-export fn categorize_decl(decl_index: Decl.Index) Category {
-    global_aliasee = .none;
-    const decl = &decls.items[@intFromEnum(decl_index)];
-    const file_index: FileIndex = decl.file;
-    const ast = &files.values()[@intFromEnum(file_index)];
-    const node_tags = ast.nodes.items(.tag);
-    const token_tags = ast.tokens.items(.tag);
-    switch (node_tags[decl.ast_node]) {
-        .root => return .namespace,
-
-        .global_var_decl,
-        .local_var_decl,
-        .simple_var_decl,
-        .aligned_var_decl,
-        => {
-            const var_decl = ast.fullVarDecl(decl.ast_node).?;
-            if (token_tags[var_decl.ast.mut_token] == .keyword_var)
-                return .global_variable;
-
-            return categorize_expr(file_index, var_decl.ast.init_node);
-        },
-
-        .fn_proto,
-        .fn_proto_multi,
-        .fn_proto_one,
-        .fn_proto_simple,
-        .fn_decl,
-        => return .function,
-
-        else => unreachable,
-    }
-}
-
-fn categorize_expr(file_index: FileIndex, node: Ast.Node.Index) Category {
-    const ast = &files.values()[@intFromEnum(file_index)];
-    const node_tags = ast.nodes.items(.tag);
-    const node_datas = ast.nodes.items(.data);
-    return switch (node_tags[node]) {
-        .container_decl,
-        .container_decl_trailing,
-        .container_decl_arg,
-        .container_decl_arg_trailing,
-        .container_decl_two,
-        .container_decl_two_trailing,
-        .tagged_union,
-        .tagged_union_trailing,
-        .tagged_union_enum_tag,
-        .tagged_union_enum_tag_trailing,
-        .tagged_union_two,
-        .tagged_union_two_trailing,
-        => .namespace,
-
-        .error_set_decl,
-        => .error_set,
-
-        .identifier => {
-            const name_token = ast.nodes.items(.main_token)[node];
-            const ident_name = ast.tokenSlice(name_token);
-            if (std.mem.eql(u8, ident_name, "true")) {
-                return .primitive_true;
-            } else if (std.mem.eql(u8, ident_name, "false")) {
-                return .primitive_false;
-            } else if (std.mem.eql(u8, ident_name, "null")) {
-                return .primitive_null;
-            } else if (std.mem.eql(u8, ident_name, "undefined")) {
-                return .primitive_undefined;
-            } else if (std.zig.primitives.isPrimitive(ident_name)) {
-                return .type;
-            }
-            // TODO:
-            //return .alias;
-            return .global_const;
-        },
-
-        .builtin_call_two, .builtin_call_two_comma => {
-            if (node_datas[node].lhs == 0) {
-                const params = [_]Ast.Node.Index{};
-                return categorize_builtin_call(file_index, node, &params);
-            } else if (node_datas[node].rhs == 0) {
-                const params = [_]Ast.Node.Index{node_datas[node].lhs};
-                return categorize_builtin_call(file_index, node, &params);
-            } else {
-                const params = [_]Ast.Node.Index{ node_datas[node].lhs, node_datas[node].rhs };
-                return categorize_builtin_call(file_index, node, &params);
-            }
-        },
-        .builtin_call, .builtin_call_comma => {
-            const params = ast.extra_data[node_datas[node].lhs..node_datas[node].rhs];
-            return categorize_builtin_call(file_index, node, params);
-        },
-
-        else => .global_const,
-    };
-}
-
-/// Set only by `categorize_decl`; read only by `get_aliasee`, valid only
-/// when `categorize_decl` returns `.alias`.
-var global_aliasee: Decl.Index = .none;
-
-export fn get_aliasee() Decl.Index {
-    return global_aliasee;
-}
-
-fn categorize_builtin_call(
-    file_index: FileIndex,
-    node: Ast.Node.Index,
-    params: []const Ast.Node.Index,
-) Category {
-    const ast = &files.values()[@intFromEnum(file_index)];
-    const main_tokens = ast.nodes.items(.main_token);
-    const builtin_token = main_tokens[node];
-    const builtin_name = ast.tokenSlice(builtin_token);
-    if (std.mem.eql(u8, builtin_name, "@import")) {
-        const str_lit_token = main_tokens[params[0]];
-        const str_bytes = ast.tokenSlice(str_lit_token);
-        const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch @panic("OOM");
-        defer gpa.free(file_path);
-        const base_path = files.keys()[@intFromEnum(file_index)];
-        const resolved_path = std.fs.path.resolvePosix(gpa, &.{
-            base_path, "..", file_path,
-        }) catch @panic("OOM");
-        defer gpa.free(resolved_path);
-        log.debug("from '{s}' @import '{s}' resolved='{s}'", .{
-            base_path, file_path, resolved_path,
-        });
-        if (files.getIndex(resolved_path)) |imported_file_index| {
-            global_aliasee = FileIndex.findRootDecl(@enumFromInt(imported_file_index));
-            assert(global_aliasee != .none);
-            return .alias;
-        } else {
-            log.warn("import target '{s}' did not resolve to any file", .{resolved_path});
-        }
+            else => null,
+        };
     }
 
-    return .global_const;
-}
+    fn source_html_fallible(
+        decl: *const Decl,
+        out: *std.ArrayListUnmanaged(u8),
+        root_node: Ast.Node.Index,
+    ) !void {
+        const ast = decl.file.ast();
 
-export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Decl.Index) {
-    const g = struct {
-        var members: std.ArrayListUnmanaged(Decl.Index) = .{};
-    };
+        var arena_instance = std.heap.ArenaAllocator.init(gpa);
+        defer arena_instance.deinit();
+        const arena = arena_instance.allocator();
 
-    g.members.clearRetainingCapacity();
+        // Find and annotate identifiers with links to their declarations.
+        var walk: Walk = .{
+            .arena = arena,
+            .node_links = .{},
+            .token_links = .{},
+            .ast = ast,
+        };
 
-    for (decls.items, 0..) |*decl, i| {
-        if (decl.parent == parent) {
-            if (include_private or decl.is_pub()) {
-                g.members.append(gpa, @enumFromInt(i)) catch @panic("OOM");
-            }
-        }
-    }
-
-    return Slice(Decl.Index).init(g.members.items);
-}
-
-fn render_markdown(out: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
-    // TODO implement a custom markdown renderer
-    // resist urge to use a third party implementation
-    // this implementation will have zig specific tweaks such as inserting links
-    // syntax highlighting, recognizing identifiers even outside of backticks, etc.
-    out.clearRetainingCapacity();
-    try appendEscaped(out, input);
-}
-
-const Walk = struct {
-    arena: std.mem.Allocator,
-    node_links: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, ?[]const u8),
-    token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, ?[]const u8),
-    ast: *const Ast,
-
-    fn node_link(w: *Walk, node: Ast.Node.Index) !?[]const u8 {
-        const ast = w.ast;
-        const arena = w.arena;
         const node_tags = ast.nodes.items(.tag);
-        const main_tokens = ast.nodes.items(.main_token);
-
-        switch (node_tags[node]) {
-            .field_access => {
-                if (w.node_links.get(node)) |result| return result;
-
-                const node_datas = ast.nodes.items(.data);
-                const object_node = node_datas[node].lhs;
-                const dot_token = main_tokens[node];
-                const field_ident = dot_token + 1;
-                const ident_name = ast.tokenSlice(field_ident);
-                if (try w.node_link(object_node)) |lhs| {
-                    const rhs_link = try std.fmt.allocPrint(w.arena, "{s}.{s}", .{ lhs, ident_name });
-                    try w.token_links.put(arena, field_ident, rhs_link);
-                    try w.node_links.put(arena, node, rhs_link);
-                    return rhs_link;
-                } else {
-                    try w.node_links.put(arena, node, null);
-                    return null;
-                }
-            },
-            .identifier => {
-                if (w.node_links.get(node)) |result| return result;
-
-                const ident_token = main_tokens[node];
-                const ident_name = ast.tokenSlice(ident_token);
-                try w.token_links.put(arena, ident_token, ident_name);
-                try w.node_links.put(arena, node, ident_name);
-                return ident_name;
-            },
-            else => return null,
+        for (node_tags, 0..) |node_tag, node| {
+            switch (node_tag) {
+                .field_access, .identifier => _ = try walk.node_link(node),
+                else => continue,
+            }
         }
-    }
-};
 
-fn decl_source_html_fallible(out: *std.ArrayListUnmanaged(u8), decl_index: Decl.Index) !void {
-    const decl = &decls.items[@intFromEnum(decl_index)];
-    const ast = &files.values()[@intFromEnum(decl.file)];
+        const token_tags = ast.tokens.items(.tag);
+        const token_starts = ast.tokens.items(.start);
 
-    // Walk the tree to find the interesting nodes we want to annotate.
-    var arena_instance = std.heap.ArenaAllocator.init(gpa);
-    defer arena_instance.deinit();
-    const arena = arena_instance.allocator();
+        const start_token = ast.firstToken(root_node);
+        const end_token = ast.lastToken(root_node) + 1;
 
-    var walk: Walk = .{
-        .arena = arena,
-        .node_links = .{},
-        .token_links = .{},
-        .ast = ast,
-    };
-
-    const node_tags = ast.nodes.items(.tag);
-    for (node_tags, 0..) |node_tag, node| {
-        switch (node_tag) {
-            .field_access, .identifier => _ = try walk.node_link(node),
-            else => continue,
-        }
-    }
-
-    const token_tags = ast.tokens.items(.tag);
-    const token_starts = ast.tokens.items(.start);
-
-    var cursor: usize = 0;
-    var prev_token_tag: std.zig.Token.Tag = undefined;
-
-    for (token_tags, token_starts, 0..) |tag, start, token_index| {
-        const slice = ast.source[cursor..start];
-        if (slice.len > 0) {
-            switch (prev_token_tag) {
+        for (
+            token_tags[start_token..end_token],
+            token_starts[start_token..end_token],
+            start_token..,
+        ) |tag, start, token_index| {
+            if (tag == .eof) break;
+            const slice = ast.source[start..token_starts[token_index + 1]];
+            if (slice.len > 0) switch (tag) {
                 .eof => unreachable,
 
                 .keyword_addrspace,
@@ -938,27 +595,12 @@ fn decl_source_html_fallible(out: *std.ArrayListUnmanaged(u8), decl_index: Decl.
 
                 .string_literal,
                 .char_literal,
+                .multiline_string_literal_line,
                 => {
                     try out.appendSlice(gpa, "<span class=\"tok-str\">");
                     try appendEscaped(out, slice);
                     try out.appendSlice(gpa, "</span>");
                 },
-
-                .multiline_string_literal_line => {
-                    try appendEscaped(out, slice);
-                },
-                //.multiline_string_literal_line => {
-                //    if (src[token.loc.end - 1] == '\n') {
-                //        try out.appendSlice(gpa, "<span class=\"tok-str\">");
-                //        try appendEscaped(out, src[token.loc.start .. token.loc.end - 1]);
-                //        line_counter += 1;
-                //        try out.print("</span>" ++ end_line ++ "\n" ++ start_line, .{line_counter});
-                //    } else {
-                //        try out.appendSlice(gpa, "<span class=\"tok-str\">");
-                //        try appendEscaped(out, src[token.loc.start..token.loc.end]);
-                //        try out.appendSlice(gpa, "</span>");
-                //    }
-                //},
 
                 .builtin => {
                     try out.appendSlice(gpa, "<span class=\"tok-builtin\">");
@@ -1073,12 +715,452 @@ fn decl_source_html_fallible(out: *std.ArrayListUnmanaged(u8), decl_index: Decl.
                 => try appendEscaped(out, slice),
 
                 .invalid, .invalid_periodasterisks => return error.InvalidToken,
-            }
+            };
         }
-        cursor = start;
-        prev_token_tag = tag;
+    }
+};
+
+fn findFirstDocComment(ast: *const Ast, token: Ast.TokenIndex) Ast.TokenIndex {
+    const token_tags = ast.tokens.items(.tag);
+    var it = token;
+    while (it > 0) {
+        it -= 1;
+        if (token_tags[it] != .doc_comment) {
+            return it + 1;
+        }
+    }
+    return it;
+}
+
+const Oom = error{OutOfMemory};
+
+fn unpack_inner(tar_bytes: []u8) !void {
+    var fbs = std.io.fixedBufferStream(tar_bytes);
+    var file_name_buffer: [1024]u8 = undefined;
+    var link_name_buffer: [1024]u8 = undefined;
+    var it = std.tar.iterator(fbs.reader(), .{
+        .file_name_buffer = &file_name_buffer,
+        .link_name_buffer = &link_name_buffer,
+    });
+    while (try it.next()) |file| {
+        switch (file.kind) {
+            .normal => {
+                if (file.size == 0 and file.name.len == 0) break;
+                if (std.mem.endsWith(u8, file.name, ".zig")) {
+                    log.debug("found file: '{s}'", .{file.name});
+                    const file_name = try gpa.dupe(u8, file.name);
+                    if (std.mem.indexOfScalar(u8, file_name, '/')) |pkg_name_end| {
+                        const pkg_name = file_name[0..pkg_name_end];
+                        const gop = try packages.getOrPut(gpa, pkg_name);
+                        const file_index: FileIndex = @enumFromInt(files.entries.len);
+                        if (!gop.found_existing or
+                            std.mem.eql(u8, file_name[pkg_name_end..], "/root.zig") or
+                            std.mem.eql(u8, file_name[pkg_name_end + 1 .. file_name.len - ".zig".len], pkg_name))
+                        {
+                            gop.value_ptr.* = file_index;
+                        }
+                        const file_bytes = tar_bytes[fbs.pos..][0..@intCast(file.size)];
+                        const tree = try parse(file_bytes);
+                        try files.put(gpa, file_name, tree);
+                        try index_file(file_index);
+                    }
+                } else {
+                    log.warn("skipping: '{s}' - the tar creation should have done that", .{
+                        file.name,
+                    });
+                }
+                try file.skip();
+            },
+            else => continue,
+        }
     }
 }
+
+fn parse(source: []u8) Oom!Ast {
+    // Require every source file to end with a newline so that Zig's tokenizer
+    // can continue to require null termination and Autodoc implementation can
+    // avoid copying source bytes from the decompressed tar file buffer.
+    const adjusted_source: [:0]const u8 = s: {
+        if (source.len == 0)
+            break :s "";
+
+        assert(source[source.len - 1] == '\n');
+        source[source.len - 1] = 0;
+        break :s source[0 .. source.len - 1 :0];
+    };
+
+    return Ast.parse(gpa, adjusted_source, .zig);
+}
+
+fn index_file(file_index: FileIndex) Oom!void {
+    const ast = file_index.ast();
+
+    if (ast.errors.len > 0) {
+        // TODO: expose this in the UI
+        log.err("can't index '{s}' because it has syntax errors", .{file_index.path()});
+        return;
+    }
+
+    const root = ast.containerDeclRoot();
+    const decl_index = try Decl.add(.{
+        .ast_node = 0,
+        .file = file_index,
+        .parent = .none,
+    });
+    try index_namespace(file_index, decl_index, root);
+}
+
+fn index_namespace(
+    file_index: FileIndex,
+    parent_decl: Decl.Index,
+    container_decl: Ast.full.ContainerDecl,
+) Oom!void {
+    const ast = file_index.ast();
+    const node_tags = ast.nodes.items(.tag);
+
+    for (container_decl.ast.members) |member| {
+        switch (node_tags[member]) {
+            .fn_proto,
+            .fn_proto_multi,
+            .fn_proto_one,
+            .fn_proto_simple,
+            .fn_decl,
+            => {
+                const decl_index = try Decl.add(.{
+                    .ast_node = member,
+                    .file = file_index,
+                    .parent = parent_decl,
+                });
+                _ = decl_index;
+            },
+
+            .global_var_decl,
+            .local_var_decl,
+            .simple_var_decl,
+            .aligned_var_decl,
+            => {
+                const decl_index = try Decl.add(.{
+                    .ast_node = member,
+                    .file = file_index,
+                    .parent = parent_decl,
+                });
+                const var_decl = ast.fullVarDecl(member).?;
+                try index_expr(file_index, decl_index, var_decl.ast.init_node);
+            },
+
+            .test_decl => {
+                // TODO look for doctests
+            },
+
+            else => continue,
+        }
+    }
+}
+
+fn index_expr(file_index: FileIndex, parent_decl: Decl.Index, node: Ast.Node.Index) Oom!void {
+    const ast = file_index.ast();
+    const node_tags = ast.nodes.items(.tag);
+    switch (node_tags[node]) {
+        .container_decl,
+        .container_decl_trailing,
+        .container_decl_arg,
+        .container_decl_arg_trailing,
+        .container_decl_two,
+        .container_decl_two_trailing,
+        .tagged_union,
+        .tagged_union_trailing,
+        .tagged_union_enum_tag,
+        .tagged_union_enum_tag_trailing,
+        .tagged_union_two,
+        .tagged_union_two_trailing,
+        => {
+            var buf: [2]Ast.Node.Index = undefined;
+            try index_namespace(file_index, parent_decl, ast.fullContainerDecl(&buf, node).?);
+        },
+
+        else => return,
+    }
+}
+
+fn fatal(comptime format: []const u8, args: anytype) noreturn {
+    var buf: [500]u8 = undefined;
+    const line = std.fmt.bufPrint(&buf, format, args) catch l: {
+        buf[buf.len - 3 ..][0..3].* = "...".*;
+        break :l &buf;
+    };
+    js.panic(line.ptr, line.len);
+}
+
+fn ascii_lower(bytes: []u8) void {
+    for (bytes) |*b| b.* = std.ascii.toLower(b.*);
+}
+
+export fn package_name(index: u32) String {
+    const names = packages.keys();
+    return String.init(if (index >= names.len) "" else names[index]);
+}
+
+export fn find_package_root(pkg: PackageIndex) Decl.Index {
+    const root_file = packages.values()[@intFromEnum(pkg)];
+    const result = root_file.findRootDecl();
+    assert(result != .none);
+    return result;
+}
+
+/// Set by `set_input_string`.
+var input_string: std.ArrayListUnmanaged(u8) = .{};
+
+export fn set_input_string(len: usize) [*]u8 {
+    input_string.resize(gpa, len) catch @panic("OOM");
+    return input_string.items.ptr;
+}
+
+/// Looks up the root struct decl corresponding to a file by path.
+/// Uses `input_string`.
+export fn find_file_root() Decl.Index {
+    const file: FileIndex = @enumFromInt(files.getIndex(input_string.items) orelse return .none);
+    return file.findRootDecl();
+}
+
+/// Uses `input_string`.
+export fn find_decl() Decl.Index {
+    const g = struct {
+        var match_fqn: std.ArrayListUnmanaged(u8) = .{};
+    };
+    for (decls.items, 0..) |*decl, decl_index| {
+        decl_fqn_list(&g.match_fqn, decl) catch @panic("OOM");
+        if (std.mem.eql(u8, g.match_fqn.items, input_string.items)) {
+            //const path = @as(Decl.Index, @enumFromInt(decl_index)).get().file.path();
+            //log.debug("find_decl '{s}' found in {s}", .{ input_string.items, path });
+            return @enumFromInt(decl_index);
+        }
+    }
+    return .none;
+}
+
+/// keep in sync with "CAT_" constants in main.js
+const Category = enum(u8) {
+    namespace,
+    global_variable,
+    function,
+    type,
+    error_set,
+    global_const,
+    primitive_true,
+    primitive_false,
+    primitive_null,
+    primitive_undefined,
+    alias,
+};
+
+export fn categorize_decl(decl_index: Decl.Index) Category {
+    global_aliasee = .none;
+    const decl = decl_index.get();
+    const file_index: FileIndex = decl.file;
+    const ast = file_index.ast();
+    const node_tags = ast.nodes.items(.tag);
+    const token_tags = ast.tokens.items(.tag);
+    switch (node_tags[decl.ast_node]) {
+        .root => return .namespace,
+
+        .global_var_decl,
+        .local_var_decl,
+        .simple_var_decl,
+        .aligned_var_decl,
+        => {
+            const var_decl = ast.fullVarDecl(decl.ast_node).?;
+            if (token_tags[var_decl.ast.mut_token] == .keyword_var)
+                return .global_variable;
+
+            return categorize_expr(file_index, var_decl.ast.init_node);
+        },
+
+        .fn_proto,
+        .fn_proto_multi,
+        .fn_proto_one,
+        .fn_proto_simple,
+        .fn_decl,
+        => return .function,
+
+        else => unreachable,
+    }
+}
+
+fn categorize_expr(file_index: FileIndex, node: Ast.Node.Index) Category {
+    const ast = file_index.ast();
+    const node_tags = ast.nodes.items(.tag);
+    const node_datas = ast.nodes.items(.data);
+    return switch (node_tags[node]) {
+        .container_decl,
+        .container_decl_trailing,
+        .container_decl_arg,
+        .container_decl_arg_trailing,
+        .container_decl_two,
+        .container_decl_two_trailing,
+        .tagged_union,
+        .tagged_union_trailing,
+        .tagged_union_enum_tag,
+        .tagged_union_enum_tag_trailing,
+        .tagged_union_two,
+        .tagged_union_two_trailing,
+        => .namespace,
+
+        .error_set_decl,
+        => .error_set,
+
+        .identifier => {
+            const name_token = ast.nodes.items(.main_token)[node];
+            const ident_name = ast.tokenSlice(name_token);
+            if (std.mem.eql(u8, ident_name, "true")) {
+                return .primitive_true;
+            } else if (std.mem.eql(u8, ident_name, "false")) {
+                return .primitive_false;
+            } else if (std.mem.eql(u8, ident_name, "null")) {
+                return .primitive_null;
+            } else if (std.mem.eql(u8, ident_name, "undefined")) {
+                return .primitive_undefined;
+            } else if (std.zig.primitives.isPrimitive(ident_name)) {
+                return .type;
+            }
+            // TODO:
+            //return .alias;
+            return .global_const;
+        },
+
+        .builtin_call_two, .builtin_call_two_comma => {
+            if (node_datas[node].lhs == 0) {
+                const params = [_]Ast.Node.Index{};
+                return categorize_builtin_call(file_index, node, &params);
+            } else if (node_datas[node].rhs == 0) {
+                const params = [_]Ast.Node.Index{node_datas[node].lhs};
+                return categorize_builtin_call(file_index, node, &params);
+            } else {
+                const params = [_]Ast.Node.Index{ node_datas[node].lhs, node_datas[node].rhs };
+                return categorize_builtin_call(file_index, node, &params);
+            }
+        },
+        .builtin_call, .builtin_call_comma => {
+            const params = ast.extra_data[node_datas[node].lhs..node_datas[node].rhs];
+            return categorize_builtin_call(file_index, node, params);
+        },
+
+        else => .global_const,
+    };
+}
+
+/// Set only by `categorize_decl`; read only by `get_aliasee`, valid only
+/// when `categorize_decl` returns `.alias`.
+var global_aliasee: Decl.Index = .none;
+
+export fn get_aliasee() Decl.Index {
+    return global_aliasee;
+}
+
+fn categorize_builtin_call(
+    file_index: FileIndex,
+    node: Ast.Node.Index,
+    params: []const Ast.Node.Index,
+) Category {
+    const ast = file_index.ast();
+    const main_tokens = ast.nodes.items(.main_token);
+    const builtin_token = main_tokens[node];
+    const builtin_name = ast.tokenSlice(builtin_token);
+    if (std.mem.eql(u8, builtin_name, "@import")) {
+        const str_lit_token = main_tokens[params[0]];
+        const str_bytes = ast.tokenSlice(str_lit_token);
+        const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch @panic("OOM");
+        defer gpa.free(file_path);
+        const base_path = file_index.path();
+        const resolved_path = std.fs.path.resolvePosix(gpa, &.{
+            base_path, "..", file_path,
+        }) catch @panic("OOM");
+        defer gpa.free(resolved_path);
+        log.debug("from '{s}' @import '{s}' resolved='{s}'", .{
+            base_path, file_path, resolved_path,
+        });
+        if (files.getIndex(resolved_path)) |imported_file_index| {
+            global_aliasee = FileIndex.findRootDecl(@enumFromInt(imported_file_index));
+            assert(global_aliasee != .none);
+            return .alias;
+        } else {
+            log.warn("import target '{s}' did not resolve to any file", .{resolved_path});
+        }
+    }
+
+    return .global_const;
+}
+
+export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Decl.Index) {
+    const g = struct {
+        var members: std.ArrayListUnmanaged(Decl.Index) = .{};
+    };
+
+    g.members.clearRetainingCapacity();
+
+    for (decls.items, 0..) |*decl, i| {
+        if (decl.parent == parent) {
+            if (include_private or decl.is_pub()) {
+                g.members.append(gpa, @enumFromInt(i)) catch @panic("OOM");
+            }
+        }
+    }
+
+    return Slice(Decl.Index).init(g.members.items);
+}
+
+fn render_markdown(out: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
+    // TODO implement a custom markdown renderer
+    // resist urge to use a third party implementation
+    // this implementation will have zig specific tweaks such as inserting links
+    // syntax highlighting, recognizing identifiers even outside of backticks, etc.
+    out.clearRetainingCapacity();
+    try appendEscaped(out, input);
+}
+
+const Walk = struct {
+    arena: std.mem.Allocator,
+    node_links: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, ?[]const u8),
+    token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, ?[]const u8),
+    ast: *const Ast,
+
+    fn node_link(w: *Walk, node: Ast.Node.Index) !?[]const u8 {
+        const ast = w.ast;
+        const arena = w.arena;
+        const node_tags = ast.nodes.items(.tag);
+        const main_tokens = ast.nodes.items(.main_token);
+
+        switch (node_tags[node]) {
+            .field_access => {
+                if (w.node_links.get(node)) |result| return result;
+
+                const node_datas = ast.nodes.items(.data);
+                const object_node = node_datas[node].lhs;
+                const dot_token = main_tokens[node];
+                const field_ident = dot_token + 1;
+                const ident_name = ast.tokenSlice(field_ident);
+                if (try w.node_link(object_node)) |lhs| {
+                    const rhs_link = try std.fmt.allocPrint(w.arena, "{s}.{s}", .{ lhs, ident_name });
+                    try w.token_links.put(arena, field_ident, rhs_link);
+                    try w.node_links.put(arena, node, rhs_link);
+                    return rhs_link;
+                } else {
+                    try w.node_links.put(arena, node, null);
+                    return null;
+                }
+            },
+            .identifier => {
+                if (w.node_links.get(node)) |result| return result;
+
+                const ident_token = main_tokens[node];
+                const ident_name = ast.tokenSlice(ident_token);
+                try w.token_links.put(arena, ident_token, ident_name);
+                try w.node_links.put(arena, node, ident_name);
+                return ident_name;
+            },
+            else => return null,
+        }
+    }
+};
 
 fn appendEscaped(out: *std.ArrayListUnmanaged(u8), s: []const u8) !void {
     for (s) |c| {
