@@ -1,5 +1,6 @@
 var files: std.StringArrayHashMapUnmanaged(Ast) = .{};
 var decls: std.ArrayListUnmanaged(Decl) = .{};
+var packages: std.StringArrayHashMapUnmanaged(FileIndex) = .{};
 const gpa = std.heap.wasm_allocator;
 
 const std = @import("std");
@@ -98,13 +99,12 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
     decl_loop: for (decls.items, 0..) |*decl, decl_index| {
         const info = decl.extra_info();
         if (!info.is_pub) continue;
-        const decl_name = info.name;
         const file_path = decl.file_path();
 
         try reset_with_file_path(&g.full_path_search_text, file_path);
         if (decl.parent != .none)
             try append_parent_ns(&g.full_path_search_text, decl.parent);
-        try g.full_path_search_text.appendSlice(gpa, decl_name);
+        try g.full_path_search_text.appendSlice(gpa, info.name);
 
         try g.full_path_search_text_lower.resize(gpa, g.full_path_search_text.items.len);
         @memcpy(g.full_path_search_text_lower.items, g.full_path_search_text.items);
@@ -128,7 +128,7 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
                 continue;
             }
             // exact, case sensitive match of just decl name
-            if (std.mem.eql(u8, decl_name, term)) {
+            if (std.mem.eql(u8, info.name, term)) {
                 points += 3;
                 bypass_limit = true;
                 continue;
@@ -190,29 +190,62 @@ fn append_parent_ns(list: *std.ArrayListUnmanaged(u8), parent: Decl.Index) Oom!v
     }
 }
 
-const String = packed struct(u64) {
-    ptr: u32,
-    len: u32,
+const String = Slice(u8);
 
-    fn init(s: []const u8) String {
-        return .{
-            .ptr = @intFromPtr(s.ptr),
-            .len = s.len,
-        };
-    }
-};
+fn Slice(T: type) type {
+    return packed struct(u64) {
+        ptr: u32,
+        len: u32,
 
-export fn fully_qualified_name(decl_index: Decl.Index) String {
-    const g = struct {
-        var fqn_buffer: std.ArrayListUnmanaged(u8) = .{};
+        fn init(s: []const T) @This() {
+            return .{
+                .ptr = @intFromPtr(s.ptr),
+                .len = s.len,
+            };
+        }
     };
-    const decl = &decls.items[@intFromEnum(decl_index)];
-    reset_with_file_path(&g.fqn_buffer, decl.file_path()) catch @panic("OOM");
-    if (decl.parent != .none)
-        append_parent_ns(&g.fqn_buffer, decl.parent) catch @panic("OOM");
-    g.fqn_buffer.appendSlice(gpa, decl.extra_info().name) catch @panic("OOM");
+}
 
-    return String.init(g.fqn_buffer.items);
+var string_result: std.ArrayListUnmanaged(u8) = .{};
+
+export fn decl_fqn(decl_index: Decl.Index) String {
+    const decl = &decls.items[@intFromEnum(decl_index)];
+    reset_with_file_path(&string_result, decl.file_path()) catch @panic("OOM");
+    if (decl.parent != .none)
+        append_parent_ns(&string_result, decl.parent) catch @panic("OOM");
+    string_result.appendSlice(gpa, decl.extra_info().name) catch @panic("OOM");
+
+    return String.init(string_result.items);
+}
+
+export fn decl_name(decl_index: Decl.Index) String {
+    const decl = &decls.items[@intFromEnum(decl_index)];
+    string_result.clearRetainingCapacity();
+    string_result.appendSlice(gpa, decl.extra_info().name) catch @panic("OOM");
+    return String.init(string_result.items);
+}
+
+export fn decl_docs_html(decl_index: Decl.Index, short: bool) String {
+    const decl = &decls.items[@intFromEnum(decl_index)];
+    const ast = &files.values()[@intFromEnum(decl.file)];
+    const token_tags = ast.tokens.items(.tag);
+    string_result.clearRetainingCapacity();
+    var it = decl.extra_info().first_doc_comment;
+    while (token_tags[it] == .doc_comment) : (it += 1) {
+        const line = std.mem.trim(u8, ast.tokenSlice(it)[3..], " \t\r");
+        string_result.appendSlice(gpa, line) catch @panic("OOM");
+        if (short) break;
+    }
+    return String.init(string_result.items);
+}
+
+export fn decl_type_html(decl_index: Decl.Index) String {
+    const decl = &decls.items[@intFromEnum(decl_index)];
+    const ast = &files.values()[@intFromEnum(decl.file)];
+    string_result.clearRetainingCapacity();
+    _ = ast; // TODO
+    string_result.appendSlice(gpa, "TODO_type_here") catch @panic("OOM");
+    return String.init(string_result.items);
 }
 
 fn reset_with_file_path(list: *std.ArrayListUnmanaged(u8), file_path: []const u8) Oom!void {
@@ -230,16 +263,25 @@ fn reset_with_file_path(list: *std.ArrayListUnmanaged(u8), file_path: []const u8
     }
 }
 
+const FileIndex = enum(u32) {
+    _,
+};
+
+const PackageIndex = enum(u32) {
+    _,
+};
+
 const Decl = struct {
     ast_node: Ast.Node.Index,
-    /// Index into files.
-    file: u32,
+    file: FileIndex,
     /// The decl whose namespace this is in.
     parent: Index,
 
     const ExtraInfo = struct {
         is_pub: bool,
         name: []const u8,
+        /// This might not be a doc_comment token in which case there are no doc comments.
+        first_doc_comment: Ast.TokenIndex,
     };
 
     const Index = enum(u32) {
@@ -253,13 +295,14 @@ const Decl = struct {
     }
 
     fn extra_info(d: *const Decl) ExtraInfo {
-        const ast = &files.values()[d.file];
+        const ast = &files.values()[@intFromEnum(d.file)];
         const token_tags = ast.tokens.items(.tag);
         const node_tags = ast.nodes.items(.tag);
         switch (node_tags[d.ast_node]) {
             .root => return .{
                 .name = "",
                 .is_pub = true,
+                .first_doc_comment = 0,
             },
 
             .global_var_decl,
@@ -274,6 +317,7 @@ const Decl = struct {
                 return .{
                     .name = ident_name,
                     .is_pub = var_decl.visib_token != null,
+                    .first_doc_comment = findFirstDocComment(ast, var_decl.firstToken()),
                 };
             },
 
@@ -291,6 +335,7 @@ const Decl = struct {
                 return .{
                     .name = ident_name,
                     .is_pub = fn_proto.visib_token != null,
+                    .first_doc_comment = findFirstDocComment(ast, fn_proto.firstToken()),
                 };
             },
 
@@ -302,9 +347,21 @@ const Decl = struct {
     }
 
     fn file_path(d: *const Decl) []const u8 {
-        return files.keys()[d.file];
+        return files.keys()[@intFromEnum(d.file)];
     }
 };
+
+fn findFirstDocComment(ast: *const Ast, token: Ast.TokenIndex) Ast.TokenIndex {
+    const token_tags = ast.tokens.items(.tag);
+    var it = token;
+    while (it > 0) {
+        it -= 1;
+        if (token_tags[it] != .doc_comment) {
+            return it + 1;
+        }
+    }
+    return it;
+}
 
 const Oom = error{OutOfMemory};
 
@@ -323,10 +380,21 @@ fn unpack_inner(tar_bytes: []u8) !void {
                 if (std.mem.endsWith(u8, file.name, ".zig")) {
                     log.debug("found file: '{s}'", .{file.name});
                     const file_name = try gpa.dupe(u8, file.name);
-                    const file_bytes = tar_bytes[fbs.pos..][0..@intCast(file.size)];
-                    const tree = try parse(file_bytes);
-                    try files.put(gpa, file_name, tree);
-                    try index_file(files.entries.len - 1);
+                    if (std.mem.indexOfScalar(u8, file_name, '/')) |pkg_name_end| {
+                        const pkg_name = file_name[0..pkg_name_end];
+                        const gop = try packages.getOrPut(gpa, pkg_name);
+                        const file_index: FileIndex = @enumFromInt(files.entries.len);
+                        if (!gop.found_existing or
+                            std.mem.eql(u8, file_name[pkg_name_end..], "/root.zig") or
+                            std.mem.eql(u8, file_name[pkg_name_end + 1 .. file_name.len - ".zig".len], pkg_name))
+                        {
+                            gop.value_ptr.* = file_index;
+                        }
+                        const file_bytes = tar_bytes[fbs.pos..][0..@intCast(file.size)];
+                        const tree = try parse(file_bytes);
+                        try files.put(gpa, file_name, tree);
+                        try index_file(file_index);
+                    }
                 } else {
                     log.warn("skipping: '{s}' - the tar creation should have done that", .{
                         file.name,
@@ -355,13 +423,13 @@ fn parse(source: []u8) Oom!Ast {
     return Ast.parse(gpa, adjusted_source, .zig);
 }
 
-fn index_file(file_index: u32) Oom!void {
-    const ast = &files.values()[file_index];
+fn index_file(file_index: FileIndex) Oom!void {
+    const ast = &files.values()[@intFromEnum(file_index)];
 
     if (ast.errors.len > 0) {
         // TODO: expose this in the UI
         log.err("can't index '{s}' because it has syntax errors", .{
-            files.keys()[file_index],
+            files.keys()[@intFromEnum(file_index)],
         });
         return;
     }
@@ -376,22 +444,15 @@ fn index_file(file_index: u32) Oom!void {
 }
 
 fn index_namespace(
-    file_index: u32,
+    file_index: FileIndex,
     parent_decl: Decl.Index,
     container_decl: Ast.full.ContainerDecl,
 ) Oom!void {
-    const ast = &files.values()[file_index];
+    const ast = &files.values()[@intFromEnum(file_index)];
     const node_tags = ast.nodes.items(.tag);
 
     for (container_decl.ast.members) |member| {
         switch (node_tags[member]) {
-            //.container_field_init,
-            //.container_field_align,
-            //.container_field,
-            //=> {
-            //    const field = ast.fullContainerField(member).?;
-            //},
-
             .fn_proto,
             .fn_proto_multi,
             .fn_proto_one,
@@ -404,8 +465,6 @@ fn index_namespace(
                     .parent = parent_decl,
                 });
                 _ = decl_index;
-                //var buf: [1]Ast.Node.Index = undefined;
-                //const fn_proto = ast.fullFnProto(&buf, member).?;
             },
 
             .global_var_decl,
@@ -431,8 +490,8 @@ fn index_namespace(
     }
 }
 
-fn index_expr(file_index: u32, parent_decl: Decl.Index, node: Ast.Node.Index) Oom!void {
-    const ast = &files.values()[file_index];
+fn index_expr(file_index: FileIndex, parent_decl: Decl.Index, node: Ast.Node.Index) Oom!void {
+    const ast = &files.values()[@intFromEnum(file_index)];
     const node_tags = ast.nodes.items(.tag);
     switch (node_tags[node]) {
         .container_decl,
@@ -464,4 +523,114 @@ fn fatal(comptime format: []const u8, args: anytype) noreturn {
 
 fn ascii_lower(bytes: []u8) void {
     for (bytes) |*b| b.* = std.ascii.toLower(b.*);
+}
+
+export fn package_name(index: u32) String {
+    const names = packages.keys();
+    return String.init(if (index >= names.len) "" else names[index]);
+}
+
+export fn find_package_root(pkg: PackageIndex) Decl.Index {
+    const root_file = packages.values()[@intFromEnum(pkg)];
+    for (decls.items, 0..) |*decl, i| {
+        if (decl.file == root_file and decl.ast_node == 0)
+            return @enumFromInt(i);
+    }
+    unreachable;
+}
+
+/// keep in sync with "CAT_" constants in main.js
+const Category = enum(u8) {
+    namespace,
+    global_variable,
+    function,
+    type,
+    error_set,
+    global_const,
+};
+
+export fn categorize_decl(decl_index: Decl.Index) Category {
+    const decl = &decls.items[@intFromEnum(decl_index)];
+    const ast = &files.values()[@intFromEnum(decl.file)];
+    const node_tags = ast.nodes.items(.tag);
+    const token_tags = ast.tokens.items(.tag);
+    switch (node_tags[decl.ast_node]) {
+        .root => return .namespace,
+
+        .global_var_decl,
+        .local_var_decl,
+        .simple_var_decl,
+        .aligned_var_decl,
+        => {
+            const var_decl = ast.fullVarDecl(decl.ast_node).?;
+            if (token_tags[var_decl.ast.mut_token] == .keyword_var)
+                return .global_variable;
+
+            return categorize_expr(ast, var_decl.ast.init_node);
+        },
+
+        .fn_proto,
+        .fn_proto_multi,
+        .fn_proto_one,
+        .fn_proto_simple,
+        .fn_decl,
+        => return .function,
+
+        else => unreachable,
+    }
+}
+
+fn categorize_expr(ast: *const Ast, node: Ast.Node.Index) Category {
+    const node_tags = ast.nodes.items(.tag);
+    return switch (node_tags[node]) {
+        .container_decl,
+        .container_decl_trailing,
+        .container_decl_arg,
+        .container_decl_arg_trailing,
+        .container_decl_two,
+        .container_decl_two_trailing,
+        .tagged_union,
+        .tagged_union_trailing,
+        .tagged_union_enum_tag,
+        .tagged_union_enum_tag_trailing,
+        .tagged_union_two,
+        .tagged_union_two_trailing,
+        => .namespace,
+
+        .error_set_decl,
+        => .error_set,
+
+        .identifier => {
+            const name_token = ast.nodes.items(.main_token)[node];
+            const ident_name = ast.tokenSlice(name_token);
+            if (std.mem.eql(u8, ident_name, "true") or
+                std.mem.eql(u8, ident_name, "false") or
+                std.mem.eql(u8, ident_name, "null"))
+            {
+                return .global_const;
+            } else if (std.zig.primitives.isPrimitive(ident_name)) {
+                return .type;
+            }
+            return .global_const;
+        },
+
+        else => .global_const,
+    };
+}
+
+export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Decl.Index) {
+    const g = struct {
+        var members: std.ArrayListUnmanaged(Decl.Index) = .{};
+    };
+
+    g.members.clearRetainingCapacity();
+
+    for (decls.items, 0..) |*decl, i| {
+        if (decl.parent == parent) {
+            assert(!include_private); // TODO implement this
+            g.members.append(gpa, @enumFromInt(i)) catch @panic("OOM");
+        }
+    }
+
+    return Slice(Decl.Index).init(g.members.items);
 }
