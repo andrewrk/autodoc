@@ -49,7 +49,6 @@ what you want.
 
 ## Roadmap
 
-* struct fields missing from std.Target
 * type links in struct fields
 * add source view links, currently you have to use the keyboard shortcut
 * source view - resolve single identifier lookups using in-scope names
@@ -66,3 +65,4 @@ what you want.
 * setting for displaying private parts
 * markdown
 * convert TODO comments into roadmap
+* only change URL on pressing enter in search box, not on key press
