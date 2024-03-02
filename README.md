@@ -49,6 +49,7 @@ what you want.
 
 ## Roadmap
 
+* struct fields missing from std.Target
 * type links in struct fields
 * add source view links, currently you have to use the keyboard shortcut
 * source view - resolve single identifier lookups using in-scope names
