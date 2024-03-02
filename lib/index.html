@@ -18,13 +18,23 @@
         font-family:"Source Code Pro",monospace;
         font-size:1em;
         background-color:#F5F5F5;
-        padding:1em;
+        padding: 1em;
+        margin: 0;
         overflow-x: auto;
       }
       code {
         font-family:"Source Code Pro",monospace;
         font-size:1em;
       }
+      #listFields > div {
+        margin-bottom: 1em;
+      }
+      .fieldDocs {
+        border: 1px solid #F5F5F5;
+        border-top: 0px;
+        padding: 1px 1em;
+      }
+
 
       #navWrap {
         float: left;
@@ -184,6 +194,9 @@
         pre{
           background-color:#2A2A2A;
         }
+        .fieldDocs {
+          border-color:#2A2A2A;
+        }
         #listNav {
           background-color: #333;
         }
@@ -284,17 +297,13 @@
       <pre id="fnProtoCode"></pre>
     </div>
     <h1 id="hdrName" class="hidden"></h1>
-    <div id="fnDocs" class="hidden"></div>
+    <div id="tldDocs" class="hidden"></div>
     <div id="sectFnErrors" class="hidden">
       <h2>Errors</h2>
       <div id="fnErrorsAnyError">
         <p><span class="tok-type">anyerror</span> means the error set is known only at runtime.</p>
       </div>
       <div id="tableFnErrors"><dl id="listFnErrors"></dl></div>
-    </div>
-    <div id="fnExamples" class="hidden"></div>
-    <div id="fnNoExamples" class="hidden">
-      <p>This function is not tested or referenced.</p>
     </div>
     <div id="sectSearchResults" class="hidden">
       <h2>Search Results</h2>

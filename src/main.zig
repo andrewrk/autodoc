@@ -236,19 +236,32 @@ fn decl_fields_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
 
 export fn decl_field_html(decl_index: Decl.Index, field_node: Ast.Node.Index) String {
     string_result.clearRetainingCapacity();
-    decl_field_html_fallible(&string_result, decl_index, field_node) catch @panic("OOM");
+    decl_field_html_fallible(&string_result, &markdown_input, decl_index, field_node) catch
+        @panic("OOM");
     return String.init(string_result.items);
 }
 
 fn decl_field_html_fallible(
     out: *std.ArrayListUnmanaged(u8),
+    buffer: *std.ArrayListUnmanaged(u8),
     decl_index: Decl.Index,
     field_node: Ast.Node.Index,
 ) !void {
     const decl = decl_index.get();
+    const ast = decl.file.ast();
     try out.appendSlice(gpa, "<pre><code>");
     try decl.source_html_fallible(out, field_node);
     try out.appendSlice(gpa, "</code></pre>");
+
+    const field = ast.fullContainerField(field_node).?;
+    const first_doc_comment = findFirstDocComment(ast, field.firstToken());
+
+    collect_docs(buffer, ast, first_doc_comment) catch @panic("OOM");
+    if (buffer.items.len > 0) {
+        try out.appendSlice(gpa, "<div class=\"fieldDocs\">");
+        render_markdown(out, buffer.items) catch @panic("OOM");
+        try out.appendSlice(gpa, "</div>");
+    }
 }
 
 export fn decl_source_html(decl_index: Decl.Index) String {
@@ -288,6 +301,38 @@ export fn decl_file_path(decl_index: Decl.Index) String {
     return String.init(string_result.items);
 }
 
+export fn decl_category_name(decl_index: Decl.Index) String {
+    const decl = decl_index.get();
+    const ast = decl.file.ast();
+    const token_tags = ast.tokens.items(.tag);
+    const name = switch (decl.categorize()) {
+        .namespace => |node| {
+            const node_tags = ast.nodes.items(.tag);
+            if (node_tags[decl.ast_node] == .root)
+                return String.init("struct");
+            string_result.clearRetainingCapacity();
+            var buf: [2]Ast.Node.Index = undefined;
+            const container_decl = ast.fullContainerDecl(&buf, node).?;
+            if (container_decl.layout_token) |t| {
+                if (token_tags[t] == .keyword_extern) {
+                    string_result.appendSlice(gpa, "extern ") catch @panic("OOM");
+                }
+            }
+            const main_token_tag = token_tags[container_decl.ast.main_token];
+            string_result.appendSlice(gpa, main_token_tag.lexeme().?) catch @panic("OOM");
+            return String.init(string_result.items);
+        },
+        .global_variable => "Global Variable",
+        .function => "Function",
+        .type => "Type",
+        .error_set => "Error Set",
+        .global_const => "Constant",
+        .primitive => "Primitive Value",
+        .alias => "Alias",
+    };
+    return String.init(name);
+}
+
 export fn decl_name(decl_index: Decl.Index) String {
     const decl = decl_index.get();
     string_result.clearRetainingCapacity();
@@ -303,18 +348,16 @@ export fn decl_name(decl_index: Decl.Index) String {
 }
 
 export fn decl_docs_html(decl_index: Decl.Index, short: bool) String {
-    const g = struct {
-        var markdown_input: std.ArrayListUnmanaged(u8) = .{};
-    };
     const decl = decl_index.get();
     const ast = decl.file.ast();
-    collect_docs(&g.markdown_input, ast, decl.extra_info().first_doc_comment) catch @panic("OOM");
+    collect_docs(&markdown_input, ast, decl.extra_info().first_doc_comment) catch @panic("OOM");
     const chomped = c: {
-        const s = g.markdown_input.items;
+        const s = markdown_input.items;
         if (!short) break :c s;
         const nl = std.mem.indexOfScalar(u8, s, '\n') orelse s.len;
         break :c s[0..nl];
     };
+    string_result.clearRetainingCapacity();
     render_markdown(&string_result, chomped) catch @panic("OOM");
     return String.init(string_result.items);
 }
@@ -327,12 +370,15 @@ fn collect_docs(
     const token_tags = ast.tokens.items(.tag);
     list.clearRetainingCapacity();
     var it = first_doc_comment;
-    while (token_tags[it] == .doc_comment) : (it += 1) {
-        // It is tempting to trim this string but think carefully about how
-        // that will affect the markdown parser.
-        const line = ast.tokenSlice(it)[3..];
-        try list.appendSlice(gpa, line);
-    }
+    while (true) : (it += 1) switch (token_tags[it]) {
+        .doc_comment, .container_doc_comment => {
+            // It is tempting to trim this string but think carefully about how
+            // that will affect the markdown parser.
+            const line = ast.tokenSlice(it)[3..];
+            try list.appendSlice(gpa, line);
+        },
+        else => break,
+    };
 }
 
 export fn decl_type_html(decl_index: Decl.Index) String {
@@ -718,6 +764,137 @@ const Decl = struct {
             };
         }
     }
+
+    /// keep in sync with "CAT_" constants in main.js
+    const Category = union(enum(u8)) {
+        namespace: Ast.Node.Index,
+        global_variable: Ast.Node.Index,
+        function: Ast.Node.Index,
+        primitive: Ast.Node.Index,
+        error_set: Ast.Node.Index,
+        global_const: Ast.Node.Index,
+        alias: Decl.Index,
+        type,
+
+        const Tag = @typeInfo(Category).Union.tag_type.?;
+    };
+
+    fn categorize(decl: *const Decl) Category {
+        const file_index: FileIndex = decl.file;
+        const ast = file_index.ast();
+        const node_tags = ast.nodes.items(.tag);
+        const token_tags = ast.tokens.items(.tag);
+        switch (node_tags[decl.ast_node]) {
+            .root => return .{ .namespace = decl.ast_node },
+
+            .global_var_decl,
+            .local_var_decl,
+            .simple_var_decl,
+            .aligned_var_decl,
+            => {
+                const var_decl = ast.fullVarDecl(decl.ast_node).?;
+                if (token_tags[var_decl.ast.mut_token] == .keyword_var)
+                    return .{ .global_variable = decl.ast_node };
+
+                return categorize_expr(file_index, var_decl.ast.init_node);
+            },
+
+            .fn_proto,
+            .fn_proto_multi,
+            .fn_proto_one,
+            .fn_proto_simple,
+            .fn_decl,
+            => return .{ .function = decl.ast_node },
+
+            else => unreachable,
+        }
+    }
+
+    fn categorize_expr(file_index: FileIndex, node: Ast.Node.Index) Category {
+        const ast = file_index.ast();
+        const node_tags = ast.nodes.items(.tag);
+        const node_datas = ast.nodes.items(.data);
+        return switch (node_tags[node]) {
+            .container_decl,
+            .container_decl_trailing,
+            .container_decl_arg,
+            .container_decl_arg_trailing,
+            .container_decl_two,
+            .container_decl_two_trailing,
+            .tagged_union,
+            .tagged_union_trailing,
+            .tagged_union_enum_tag,
+            .tagged_union_enum_tag_trailing,
+            .tagged_union_two,
+            .tagged_union_two_trailing,
+            => .{ .namespace = node },
+
+            .error_set_decl,
+            => .{ .error_set = node },
+
+            .identifier => {
+                const name_token = ast.nodes.items(.main_token)[node];
+                const ident_name = ast.tokenSlice(name_token);
+                if (std.zig.primitives.isPrimitive(ident_name)) {
+                    return .{ .primitive = node };
+                }
+                // TODO:
+                //return .alias;
+                return .{ .global_const = node };
+            },
+
+            .builtin_call_two, .builtin_call_two_comma => {
+                if (node_datas[node].lhs == 0) {
+                    const params = [_]Ast.Node.Index{};
+                    return categorize_builtin_call(file_index, node, &params);
+                } else if (node_datas[node].rhs == 0) {
+                    const params = [_]Ast.Node.Index{node_datas[node].lhs};
+                    return categorize_builtin_call(file_index, node, &params);
+                } else {
+                    const params = [_]Ast.Node.Index{ node_datas[node].lhs, node_datas[node].rhs };
+                    return categorize_builtin_call(file_index, node, &params);
+                }
+            },
+            .builtin_call, .builtin_call_comma => {
+                const params = ast.extra_data[node_datas[node].lhs..node_datas[node].rhs];
+                return categorize_builtin_call(file_index, node, params);
+            },
+
+            else => .{ .global_const = node },
+        };
+    }
+
+    fn categorize_builtin_call(
+        file_index: FileIndex,
+        node: Ast.Node.Index,
+        params: []const Ast.Node.Index,
+    ) Category {
+        const ast = file_index.ast();
+        const main_tokens = ast.nodes.items(.main_token);
+        const builtin_token = main_tokens[node];
+        const builtin_name = ast.tokenSlice(builtin_token);
+        if (std.mem.eql(u8, builtin_name, "@import")) {
+            const str_lit_token = main_tokens[params[0]];
+            const str_bytes = ast.tokenSlice(str_lit_token);
+            const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch @panic("OOM");
+            defer gpa.free(file_path);
+            const base_path = file_index.path();
+            const resolved_path = std.fs.path.resolvePosix(gpa, &.{
+                base_path, "..", file_path,
+            }) catch @panic("OOM");
+            defer gpa.free(resolved_path);
+            log.debug("from '{s}' @import '{s}' resolved='{s}'", .{
+                base_path, file_path, resolved_path,
+            });
+            if (files.getIndex(resolved_path)) |imported_file_index| {
+                return .{ .alias = FileIndex.findRootDecl(@enumFromInt(imported_file_index)) };
+            } else {
+                log.warn("import target '{s}' did not resolve to any file", .{resolved_path});
+            }
+        }
+
+        return .{ .global_const = node };
+    }
 };
 
 fn findFirstDocComment(ast: *const Ast, token: Ast.TokenIndex) Ast.TokenIndex {
@@ -909,6 +1086,8 @@ export fn find_package_root(pkg: PackageIndex) Decl.Index {
 
 /// Set by `set_input_string`.
 var input_string: std.ArrayListUnmanaged(u8) = .{};
+/// Only for direct use by exported functions.
+var markdown_input: std.ArrayListUnmanaged(u8) = .{};
 
 export fn set_input_string(len: usize) [*]u8 {
     input_string.resize(gpa, len) catch @panic("OOM");
@@ -938,116 +1117,6 @@ export fn find_decl() Decl.Index {
     return .none;
 }
 
-/// keep in sync with "CAT_" constants in main.js
-const Category = enum(u8) {
-    namespace,
-    global_variable,
-    function,
-    type,
-    error_set,
-    global_const,
-    primitive_true,
-    primitive_false,
-    primitive_null,
-    primitive_undefined,
-    alias,
-};
-
-export fn categorize_decl(decl_index: Decl.Index) Category {
-    global_aliasee = .none;
-    const decl = decl_index.get();
-    const file_index: FileIndex = decl.file;
-    const ast = file_index.ast();
-    const node_tags = ast.nodes.items(.tag);
-    const token_tags = ast.tokens.items(.tag);
-    switch (node_tags[decl.ast_node]) {
-        .root => return .namespace,
-
-        .global_var_decl,
-        .local_var_decl,
-        .simple_var_decl,
-        .aligned_var_decl,
-        => {
-            const var_decl = ast.fullVarDecl(decl.ast_node).?;
-            if (token_tags[var_decl.ast.mut_token] == .keyword_var)
-                return .global_variable;
-
-            return categorize_expr(file_index, var_decl.ast.init_node);
-        },
-
-        .fn_proto,
-        .fn_proto_multi,
-        .fn_proto_one,
-        .fn_proto_simple,
-        .fn_decl,
-        => return .function,
-
-        else => unreachable,
-    }
-}
-
-fn categorize_expr(file_index: FileIndex, node: Ast.Node.Index) Category {
-    const ast = file_index.ast();
-    const node_tags = ast.nodes.items(.tag);
-    const node_datas = ast.nodes.items(.data);
-    return switch (node_tags[node]) {
-        .container_decl,
-        .container_decl_trailing,
-        .container_decl_arg,
-        .container_decl_arg_trailing,
-        .container_decl_two,
-        .container_decl_two_trailing,
-        .tagged_union,
-        .tagged_union_trailing,
-        .tagged_union_enum_tag,
-        .tagged_union_enum_tag_trailing,
-        .tagged_union_two,
-        .tagged_union_two_trailing,
-        => .namespace,
-
-        .error_set_decl,
-        => .error_set,
-
-        .identifier => {
-            const name_token = ast.nodes.items(.main_token)[node];
-            const ident_name = ast.tokenSlice(name_token);
-            if (std.mem.eql(u8, ident_name, "true")) {
-                return .primitive_true;
-            } else if (std.mem.eql(u8, ident_name, "false")) {
-                return .primitive_false;
-            } else if (std.mem.eql(u8, ident_name, "null")) {
-                return .primitive_null;
-            } else if (std.mem.eql(u8, ident_name, "undefined")) {
-                return .primitive_undefined;
-            } else if (std.zig.primitives.isPrimitive(ident_name)) {
-                return .type;
-            }
-            // TODO:
-            //return .alias;
-            return .global_const;
-        },
-
-        .builtin_call_two, .builtin_call_two_comma => {
-            if (node_datas[node].lhs == 0) {
-                const params = [_]Ast.Node.Index{};
-                return categorize_builtin_call(file_index, node, &params);
-            } else if (node_datas[node].rhs == 0) {
-                const params = [_]Ast.Node.Index{node_datas[node].lhs};
-                return categorize_builtin_call(file_index, node, &params);
-            } else {
-                const params = [_]Ast.Node.Index{ node_datas[node].lhs, node_datas[node].rhs };
-                return categorize_builtin_call(file_index, node, &params);
-            }
-        },
-        .builtin_call, .builtin_call_comma => {
-            const params = ast.extra_data[node_datas[node].lhs..node_datas[node].rhs];
-            return categorize_builtin_call(file_index, node, params);
-        },
-
-        else => .global_const,
-    };
-}
-
 /// Set only by `categorize_decl`; read only by `get_aliasee`, valid only
 /// when `categorize_decl` returns `.alias`.
 var global_aliasee: Decl.Index = .none;
@@ -1055,39 +1124,26 @@ var global_aliasee: Decl.Index = .none;
 export fn get_aliasee() Decl.Index {
     return global_aliasee;
 }
-
-fn categorize_builtin_call(
-    file_index: FileIndex,
-    node: Ast.Node.Index,
-    params: []const Ast.Node.Index,
-) Category {
-    const ast = file_index.ast();
-    const main_tokens = ast.nodes.items(.main_token);
-    const builtin_token = main_tokens[node];
-    const builtin_name = ast.tokenSlice(builtin_token);
-    if (std.mem.eql(u8, builtin_name, "@import")) {
-        const str_lit_token = main_tokens[params[0]];
-        const str_bytes = ast.tokenSlice(str_lit_token);
-        const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch @panic("OOM");
-        defer gpa.free(file_path);
-        const base_path = file_index.path();
-        const resolved_path = std.fs.path.resolvePosix(gpa, &.{
-            base_path, "..", file_path,
-        }) catch @panic("OOM");
-        defer gpa.free(resolved_path);
-        log.debug("from '{s}' @import '{s}' resolved='{s}'", .{
-            base_path, file_path, resolved_path,
-        });
-        if (files.getIndex(resolved_path)) |imported_file_index| {
-            global_aliasee = FileIndex.findRootDecl(@enumFromInt(imported_file_index));
-            assert(global_aliasee != .none);
-            return .alias;
-        } else {
-            log.warn("import target '{s}' did not resolve to any file", .{resolved_path});
+export fn categorize_decl(decl_index: Decl.Index, resolve_alias_count: usize) Decl.Category.Tag {
+    global_aliasee = .none;
+    var chase_alias_n = resolve_alias_count;
+    var decl = decl_index.get();
+    while (true) {
+        const result = decl.categorize();
+        switch (decl.categorize()) {
+            .alias => |new_index| {
+                assert(new_index != .none);
+                global_aliasee = new_index;
+                if (chase_alias_n > 0) {
+                    chase_alias_n -= 1;
+                    decl = new_index.get();
+                    continue;
+                }
+            },
+            else => {},
         }
+        return result;
     }
-
-    return .global_const;
 }
 
 export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Decl.Index) {
@@ -1108,13 +1164,16 @@ export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Dec
     return Slice(Decl.Index).init(g.members.items);
 }
 
+/// Appends to `out`, does not clear it.
 fn render_markdown(out: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
+    if (input.len == 0) return;
     // TODO implement a custom markdown renderer
     // resist urge to use a third party implementation
     // this implementation will have zig specific tweaks such as inserting links
     // syntax highlighting, recognizing identifiers even outside of backticks, etc.
-    out.clearRetainingCapacity();
+    try out.appendSlice(gpa, "<p>");
     try appendEscaped(out, input);
+    try out.appendSlice(gpa, "</p>");
 }
 
 const Walk = struct {

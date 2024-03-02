@@ -34,6 +34,7 @@ pub fn build(b: *std.Build) void {
     wasm.root_module.export_symbol_names = &.{
         "alloc",
         "categorize_decl",
+        "decl_category_name",
         "decl_docs_html",
         "decl_field_html",
         "decl_fields",
