@@ -49,7 +49,6 @@ what you want.
 
 ## Roadmap
 
-* root package alias - avoid `std.std` from ocurring
 * implement alias for `const a = b;`
 * implement alias for `const a = b.c;`
 * source view: implement scrolling to local var decls

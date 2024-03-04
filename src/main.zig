@@ -100,9 +100,8 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
     decl_loop: for (decls.items, 0..) |*decl, decl_index| {
         const info = decl.extra_info();
         if (!info.is_pub) continue;
-        const file_path = decl.file.path();
 
-        try reset_with_file_path(&g.full_path_search_text, file_path);
+        try reset_with_decl_path(&g.full_path_search_text, decl);
         if (decl.parent != .none)
             try Decl.append_parent_ns(&g.full_path_search_text, decl.parent);
         try g.full_path_search_text.appendSlice(gpa, info.name);
@@ -372,8 +371,20 @@ export fn decl_type_html(decl_index: Decl.Index) String {
     return String.init(string_result.items);
 }
 
-fn reset_with_file_path(list: *std.ArrayListUnmanaged(u8), file_path: []const u8) Oom!void {
+fn reset_with_decl_path(list: *std.ArrayListUnmanaged(u8), decl: *const Decl) Oom!void {
     list.clearRetainingCapacity();
+
+    // Prefer the package name alias.
+    for (packages.keys(), packages.values()) |pkg_name, pkg_file| {
+        if (pkg_file == decl.file) {
+            try list.ensureUnusedCapacity(gpa, pkg_name.len + 1);
+            list.appendSliceAssumeCapacity(pkg_name);
+            list.appendAssumeCapacity('.');
+            return;
+        }
+    }
+
+    const file_path = decl.file.path();
     try list.ensureUnusedCapacity(gpa, file_path.len + 1);
     list.appendSliceAssumeCapacity(file_path);
     for (list.items) |*byte| switch (byte.*) {
@@ -956,7 +967,7 @@ pub const Decl = struct {
     }
 
     fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
-        try reset_with_file_path(out, decl.file.path());
+        try reset_with_decl_path(out, decl);
         if (decl.parent != .none) {
             try append_parent_ns(out, decl.parent);
             try out.appendSlice(gpa, decl.extra_info().name);
