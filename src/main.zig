@@ -450,7 +450,10 @@ const Decl = struct {
             .root => return .{
                 .name = "",
                 .is_pub = true,
-                .first_doc_comment = 0,
+                .first_doc_comment = if (token_tags[0] == .container_doc_comment)
+                    0
+                else
+                    token_tags.len - 1,
             },
 
             .global_var_decl,

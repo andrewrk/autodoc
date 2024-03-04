@@ -49,17 +49,17 @@ what you want.
 
 ## Roadmap
 
-* type links in struct fields
+* don't redundantly show doc comments in struct fields
+* functions + ability to expand source of only that function without leaving the page
 * add source view links, currently you have to use the keyboard shortcut
 * source view - resolve single identifier lookups using in-scope names
   - if it targets an alias then jump to the alias
   - if it is field access then resolve the alias of the LHS
 * source view - resolve identifier links to locals to link to the local decl
-* source view - newlines showing up in links
 * source view - make identifier links style subtler so it still looks like source
 * detect if it's the root package file and skip the top of the nav
-* include struct fields in search query matching
-* functions + ability to expand source of only that function without leaving the page
+* include struct field names and doc comments in search query matching
+* include function parameter names and doc comments in search query matching
 * follow imports for better categorization
 * doctests
 * setting for displaying private parts
