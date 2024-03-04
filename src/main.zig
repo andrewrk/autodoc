@@ -7,6 +7,7 @@ const std = @import("std");
 const log = std.log;
 const assert = std.debug.assert;
 const Ast = std.zig.Ast;
+const Walk = @import("Walk.zig");
 
 const js = struct {
     extern "js" fn log(ptr: [*]const u8, len: usize) void;
@@ -103,7 +104,7 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
 
         try reset_with_file_path(&g.full_path_search_text, file_path);
         if (decl.parent != .none)
-            try append_parent_ns(&g.full_path_search_text, decl.parent);
+            try Decl.append_parent_ns(&g.full_path_search_text, decl.parent);
         try g.full_path_search_text.appendSlice(gpa, info.name);
 
         try g.full_path_search_text_lower.resize(gpa, g.full_path_search_text.items.len);
@@ -181,15 +182,6 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
         query_results.shrinkRetainingCapacity(max_matched_items);
 }
 
-fn append_parent_ns(list: *std.ArrayListUnmanaged(u8), parent: Decl.Index) Oom!void {
-    assert(parent != .none);
-    const decl = parent.get();
-    if (decl.parent != .none) {
-        try append_parent_ns(list, decl.parent);
-        try list.append(gpa, '.');
-    }
-}
-
 const String = Slice(u8);
 
 fn Slice(T: type) type {
@@ -250,7 +242,7 @@ fn decl_field_html_fallible(
     const decl = decl_index.get();
     const ast = decl.file.ast();
     try out.appendSlice(gpa, "<pre><code>");
-    try decl.source_html_fallible(out, field_node);
+    try decl.source_html(out, field_node);
     try out.appendSlice(gpa, "</code></pre>");
 
     const field = ast.fullContainerField(field_node).?;
@@ -268,7 +260,7 @@ export fn decl_source_html(decl_index: Decl.Index) String {
     const decl = decl_index.get();
 
     string_result.clearRetainingCapacity();
-    decl.source_html_fallible(&string_result, decl.ast_node) catch |err| {
+    decl.source_html(&string_result, decl.ast_node) catch |err| {
         fatal("unable to render source: {s}", .{@errorName(err)});
     };
     return String.init(string_result.items);
@@ -276,18 +268,8 @@ export fn decl_source_html(decl_index: Decl.Index) String {
 
 export fn decl_fqn(decl_index: Decl.Index) String {
     const decl = decl_index.get();
-    decl_fqn_list(&string_result, decl) catch @panic("OOM");
+    decl.fqn(&string_result) catch @panic("OOM");
     return String.init(string_result.items);
-}
-
-fn decl_fqn_list(list: *std.ArrayListUnmanaged(u8), decl: *const Decl) Oom!void {
-    try reset_with_file_path(list, decl.file.path());
-    if (decl.parent != .none) {
-        try append_parent_ns(list, decl.parent);
-        try list.appendSlice(gpa, decl.extra_info().name);
-    } else {
-        list.items.len -= 1; // remove the trailing '.'
-    }
 }
 
 export fn decl_parent(decl_index: Decl.Index) Decl.Index {
@@ -541,7 +523,7 @@ const Decl = struct {
         };
     }
 
-    fn source_html_fallible(
+    fn source_html(
         decl: *const Decl,
         out: *std.ArrayListUnmanaged(u8),
         root_node: Ast.Node.Index,
@@ -552,36 +534,39 @@ const Decl = struct {
         defer arena_instance.deinit();
         const arena = arena_instance.allocator();
 
-        // Find and annotate identifiers with links to their declarations.
+        const g = struct {
+            var fqn: std.ArrayListUnmanaged(u8) = .{};
+        };
+        try decl.fqn(&g.fqn);
+
         var walk: Walk = .{
             .arena = arena,
-            .node_links = .{},
             .token_links = .{},
+            .token_parents = .{},
             .ast = ast,
         };
-
-        const node_tags = ast.nodes.items(.tag);
-        for (node_tags, 0..) |node_tag, node| {
-            switch (node_tag) {
-                .field_access, .identifier => _ = try walk.node_link(node),
-                else => continue,
-            }
-        }
+        try walk.root();
 
         const token_tags = ast.tokens.items(.tag);
         const token_starts = ast.tokens.items(.start);
+        const main_tokens = ast.nodes.items(.main_token);
 
         const start_token = ast.firstToken(root_node);
         const end_token = ast.lastToken(root_node) + 1;
+
+        var cursor: usize = 0;
 
         for (
             token_tags[start_token..end_token],
             token_starts[start_token..end_token],
             start_token..,
         ) |tag, start, token_index| {
+            const between = ast.source[cursor..start];
+            try appendEscaped(out, between);
             if (tag == .eof) break;
-            const slice = ast.source[start..token_starts[token_index + 1]];
-            if (slice.len > 0) switch (tag) {
+            const slice = ast.tokenSlice(token_index);
+            cursor = start + slice.len;
+            switch (tag) {
                 .eof => unreachable,
 
                 .keyword_addrspace,
@@ -675,16 +660,23 @@ const Decl = struct {
                         try out.appendSlice(gpa, "<span class=\"tok-type\">");
                         try appendEscaped(out, slice);
                         try out.appendSlice(gpa, "</span>");
-                    } else if (walk.token_links.get(token_index - 1)) |opt_link| {
-                        if (opt_link) |link| {
-                            try out.appendSlice(gpa, "<a href=\"#");
-                            try out.appendSlice(gpa, link); // TODO url escape
-                            try out.appendSlice(gpa, "\">");
-                            try appendEscaped(out, slice);
-                            try out.appendSlice(gpa, "</a>");
-                        } else {
-                            try appendEscaped(out, slice);
-                        }
+                    } else if (walk.token_links.get(token_index)) |var_node| {
+                        const name_token = main_tokens[var_node] + 1;
+                        const name = ast.tokenSlice(name_token);
+                        try out.appendSlice(gpa, "<a href=\"#");
+                        try out.appendSlice(gpa, g.fqn.items); // TODO url escape
+                        try out.appendSlice(gpa, ".");
+                        try out.appendSlice(gpa, name); // TODO url escape
+                        try out.appendSlice(gpa, "\">");
+                        try appendEscaped(out, slice);
+                        try out.appendSlice(gpa, "</a>");
+                    } else if (walk.token_parents.contains(token_index)) {
+                        // TODO url escape
+                        try out.writer(gpa).print("<span id=\"{s}.{s}\">", .{
+                            g.fqn.items, slice,
+                        });
+                        try appendEscaped(out, slice);
+                        try out.appendSlice(gpa, "</span>");
                     } else {
                         try appendEscaped(out, slice);
                     }
@@ -761,7 +753,7 @@ const Decl = struct {
                 => try appendEscaped(out, slice),
 
                 .invalid, .invalid_periodasterisks => return error.InvalidToken,
-            };
+            }
         }
     }
 
@@ -894,6 +886,25 @@ const Decl = struct {
         }
 
         return .{ .global_const = node };
+    }
+
+    fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
+        try reset_with_file_path(out, decl.file.path());
+        if (decl.parent != .none) {
+            try append_parent_ns(out, decl.parent);
+            try out.appendSlice(gpa, decl.extra_info().name);
+        } else {
+            out.items.len -= 1; // remove the trailing '.'
+        }
+    }
+
+    fn append_parent_ns(list: *std.ArrayListUnmanaged(u8), parent: Decl.Index) Oom!void {
+        assert(parent != .none);
+        const decl = parent.get();
+        if (decl.parent != .none) {
+            try append_parent_ns(list, decl.parent);
+            try list.append(gpa, '.');
+        }
     }
 };
 
@@ -1107,7 +1118,7 @@ export fn find_decl() Decl.Index {
         var match_fqn: std.ArrayListUnmanaged(u8) = .{};
     };
     for (decls.items, 0..) |*decl, decl_index| {
-        decl_fqn_list(&g.match_fqn, decl) catch @panic("OOM");
+        decl.fqn(&g.match_fqn) catch @panic("OOM");
         if (std.mem.eql(u8, g.match_fqn.items, input_string.items)) {
             //const path = @as(Decl.Index, @enumFromInt(decl_index)).get().file.path();
             //log.debug("find_decl '{s}' found in {s}", .{ input_string.items, path });
@@ -1175,51 +1186,6 @@ fn render_markdown(out: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
     try appendEscaped(out, input);
     try out.appendSlice(gpa, "</p>");
 }
-
-const Walk = struct {
-    arena: std.mem.Allocator,
-    node_links: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, ?[]const u8),
-    token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, ?[]const u8),
-    ast: *const Ast,
-
-    fn node_link(w: *Walk, node: Ast.Node.Index) !?[]const u8 {
-        const ast = w.ast;
-        const arena = w.arena;
-        const node_tags = ast.nodes.items(.tag);
-        const main_tokens = ast.nodes.items(.main_token);
-
-        switch (node_tags[node]) {
-            .field_access => {
-                if (w.node_links.get(node)) |result| return result;
-
-                const node_datas = ast.nodes.items(.data);
-                const object_node = node_datas[node].lhs;
-                const dot_token = main_tokens[node];
-                const field_ident = dot_token + 1;
-                const ident_name = ast.tokenSlice(field_ident);
-                if (try w.node_link(object_node)) |lhs| {
-                    const rhs_link = try std.fmt.allocPrint(w.arena, "{s}.{s}", .{ lhs, ident_name });
-                    try w.token_links.put(arena, field_ident, rhs_link);
-                    try w.node_links.put(arena, node, rhs_link);
-                    return rhs_link;
-                } else {
-                    try w.node_links.put(arena, node, null);
-                    return null;
-                }
-            },
-            .identifier => {
-                if (w.node_links.get(node)) |result| return result;
-
-                const ident_token = main_tokens[node];
-                const ident_name = ast.tokenSlice(ident_token);
-                try w.token_links.put(arena, ident_token, ident_name);
-                try w.node_links.put(arena, node, ident_name);
-                return ident_name;
-            },
-            else => return null,
-        }
-    }
-};
 
 fn appendEscaped(out: *std.ArrayListUnmanaged(u8), s: []const u8) !void {
     for (s) |c| {
