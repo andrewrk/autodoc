@@ -2,7 +2,8 @@
 
 arena: std.mem.Allocator,
 token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
-token_parents: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, void),
+token_decls: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, void),
+token_parents: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
 ast: *const Ast,
 
 pub fn root(w: *Walk) !void {
@@ -289,7 +290,13 @@ fn expr(w: *Walk, scope: *Scope, node: Ast.Node.Index) Oom!void {
             }
         },
         .field_access => {
-            std.log.debug("TODO walk field_access", .{});
+            const object_node = node_datas[node].lhs;
+            const dot_token = main_tokens[node];
+            const field_ident = dot_token + 1;
+            try w.token_parents.put(arena, field_ident, node);
+            // This will populate the left-most field object if it is an
+            // identifier, allowing rendering code to piece together the link.
+            try expr(w, scope, object_node);
         },
 
         .string_literal,
@@ -561,7 +568,7 @@ fn while_expr(w: *Walk, scope: *Scope, full: Ast.full.While) Oom!void {
 }
 
 fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.Index) Oom!void {
-    const gpa = w.arena;
+    const arena = w.arena;
     const ast = w.ast;
     const node_tags = ast.nodes.items(.tag);
     const main_tokens = ast.nodes.items(.main_token);
@@ -590,8 +597,8 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
         };
 
         const token_bytes = ast.tokenSlice(name_token);
-        try namespace.names.put(gpa, token_bytes, member_node);
-        try w.token_parents.put(gpa, name_token, {});
+        try namespace.names.put(arena, token_bytes, member_node);
+        try w.token_decls.put(arena, name_token, {});
     }
 }
 

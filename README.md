@@ -49,6 +49,8 @@ what you want.
 
 ## Roadmap
 
+* doctests
+* Walk: for_range not handled correctly
 * don't redundantly show doc comments in struct fields
 * functions + ability to expand source of only that function without leaving the page
 * add source view links, currently you have to use the keyboard shortcut
@@ -61,7 +63,6 @@ what you want.
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
 * follow imports for better categorization
-* doctests
 * setting for displaying private parts
 * markdown
 * convert TODO comments into roadmap

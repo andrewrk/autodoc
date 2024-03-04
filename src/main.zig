@@ -539,12 +539,14 @@ const Decl = struct {
 
         const g = struct {
             var fqn: std.ArrayListUnmanaged(u8) = .{};
+            var field_access_buffer: std.ArrayListUnmanaged(u8) = .{};
         };
         try decl.fqn(&g.fqn);
 
         var walk: Walk = .{
             .arena = arena,
             .token_links = .{},
+            .token_decls = .{},
             .token_parents = .{},
             .ast = ast,
         };
@@ -673,7 +675,21 @@ const Decl = struct {
                         try out.appendSlice(gpa, "\">");
                         try appendEscaped(out, slice);
                         try out.appendSlice(gpa, "</a>");
-                    } else if (walk.token_parents.contains(token_index)) {
+                    } else if (walk.token_parents.get(token_index)) |field_access_node| {
+                        g.field_access_buffer.clearRetainingCapacity();
+                        try walk_field_accesses(&walk, &g.field_access_buffer, field_access_node);
+                        if (g.field_access_buffer.items.len > 0) {
+                            try out.appendSlice(gpa, "<a href=\"#");
+                            try out.appendSlice(gpa, g.fqn.items); // TODO url escape
+                            try out.appendSlice(gpa, ".");
+                            try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
+                            try out.appendSlice(gpa, "\">");
+                            try appendEscaped(out, slice);
+                            try out.appendSlice(gpa, "</a>");
+                        } else {
+                            try appendEscaped(out, slice);
+                        }
+                    } else if (walk.token_decls.contains(token_index)) {
                         // TODO url escape
                         try out.writer(gpa).print("<span id=\"{s}.{s}\">", .{
                             g.fqn.items, slice,
@@ -758,6 +774,37 @@ const Decl = struct {
                 .invalid, .invalid_periodasterisks => return error.InvalidToken,
             }
         }
+    }
+
+    fn walk_field_accesses(
+        w: *Walk,
+        out: *std.ArrayListUnmanaged(u8),
+        node: Ast.Node.Index,
+    ) Oom!void {
+        const ast = w.ast;
+        const node_tags = ast.nodes.items(.tag);
+        assert(node_tags[node] == .field_access);
+        const node_datas = ast.nodes.items(.data);
+        const main_tokens = ast.nodes.items(.main_token);
+        const object_node = node_datas[node].lhs;
+        const dot_token = main_tokens[node];
+        const field_ident = dot_token + 1;
+        switch (node_tags[object_node]) {
+            .identifier => {
+                const lhs_ident = main_tokens[object_node];
+                if (w.token_links.get(lhs_ident)) |var_node| {
+                    const name_token = main_tokens[var_node] + 1;
+                    const name = ast.tokenSlice(name_token);
+                    try out.appendSlice(gpa, name);
+                }
+            },
+            .field_access => {
+                try walk_field_accesses(w, out, object_node);
+            },
+            else => {},
+        }
+        try out.append(gpa, '.');
+        try out.appendSlice(gpa, ast.tokenSlice(field_ident));
     }
 
     /// keep in sync with "CAT_" constants in main.js
