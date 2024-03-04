@@ -315,7 +315,10 @@ fn expr(w: *Walk, scope: *Scope, node: Ast.Node.Index) Oom!void {
         .@"asm",
         => {
             const full = ast.fullAsm(node).?;
-            for (full.ast.items) |n| try expr(w, scope, n);
+            for (full.ast.items) |n| {
+                // TODO handle .asm_input, .asm_output
+                _ = n;
+            }
             try expr(w, scope, full.ast.template);
         },
 
@@ -372,7 +375,12 @@ fn expr(w: *Walk, scope: *Scope, node: Ast.Node.Index) Oom!void {
         .for_simple, .@"for" => {
             const full = ast.fullFor(node).?;
             for (full.ast.inputs) |input| {
-                try expr(w, scope, input);
+                if (node_tags[input] == .for_range) {
+                    try expr(w, scope, node_datas[input].lhs);
+                    try maybe_expr(w, scope, node_datas[input].rhs);
+                } else {
+                    try expr(w, scope, input);
+                }
             }
             try expr(w, scope, full.ast.then_expr);
             try maybe_expr(w, scope, full.ast.else_expr);

@@ -49,21 +49,21 @@ what you want.
 
 ## Roadmap
 
-* Walk: for_range not handled correctly
 * root package alias - avoid `std.std` from ocurring
 * implement alias for `const a = b;`
 * implement alias for `const a = b.c;`
 * source view: implement scrolling to local var decls
 * source view: implement redirect when decl found
 * doctests
-* don't redundantly show doc comments in struct fields
+* struct fields: render each component separate rather than via source rendering
 * functions + ability to expand source of only that function without leaving the page
 * add source view links, currently you have to use the keyboard shortcut
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
 * follow imports for better categorization
 * setting for displaying private parts
-* markdown
+* markdown: basics such as bold, italics
+* markdown: render backtick quoted stuff as code with links
 * convert TODO comments into roadmap
 * only change URL on pressing enter in search box, not on key press
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
