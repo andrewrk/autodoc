@@ -411,7 +411,7 @@ const PackageIndex = enum(u32) {
     _,
 };
 
-const Decl = struct {
+pub const Decl = struct {
     ast_node: Ast.Node.Index,
     file: FileIndex,
     /// The decl whose namespace this is in.
@@ -538,23 +538,20 @@ const Decl = struct {
         const arena = arena_instance.allocator();
 
         const g = struct {
-            var fqn: std.ArrayListUnmanaged(u8) = .{};
             var field_access_buffer: std.ArrayListUnmanaged(u8) = .{};
         };
-        try decl.fqn(&g.fqn);
 
         var walk: Walk = .{
             .arena = arena,
             .token_links = .{},
-            .token_decls = .{},
             .token_parents = .{},
+            .decl = decl,
             .ast = ast,
         };
         try walk.root();
 
         const token_tags = ast.tokens.items(.tag);
         const token_starts = ast.tokens.items(.start);
-        const main_tokens = ast.nodes.items(.main_token);
 
         const start_token = ast.firstToken(root_node);
         const end_token = ast.lastToken(root_node) + 1;
@@ -666,12 +663,10 @@ const Decl = struct {
                         try appendEscaped(out, slice);
                         try out.appendSlice(gpa, "</span>");
                     } else if (walk.token_links.get(token_index)) |var_node| {
-                        const name_token = main_tokens[var_node] + 1;
-                        const name = ast.tokenSlice(name_token);
+                        g.field_access_buffer.clearRetainingCapacity();
+                        try resolve_var_link(&walk, &g.field_access_buffer, var_node);
                         try out.appendSlice(gpa, "<a href=\"#");
-                        try out.appendSlice(gpa, g.fqn.items); // TODO url escape
-                        try out.appendSlice(gpa, ".");
-                        try out.appendSlice(gpa, name); // TODO url escape
+                        try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
                         try out.appendSlice(gpa, "\">");
                         try appendEscaped(out, slice);
                         try out.appendSlice(gpa, "</a>");
@@ -680,8 +675,6 @@ const Decl = struct {
                         try walk_field_accesses(&walk, &g.field_access_buffer, field_access_node);
                         if (g.field_access_buffer.items.len > 0) {
                             try out.appendSlice(gpa, "<a href=\"#");
-                            try out.appendSlice(gpa, g.fqn.items); // TODO url escape
-                            try out.appendSlice(gpa, ".");
                             try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
                             try out.appendSlice(gpa, "\">");
                             try appendEscaped(out, slice);
@@ -689,13 +682,6 @@ const Decl = struct {
                         } else {
                             try appendEscaped(out, slice);
                         }
-                    } else if (walk.token_decls.contains(token_index)) {
-                        // TODO url escape
-                        try out.writer(gpa).print("<span id=\"{s}.{s}\">", .{
-                            g.fqn.items, slice,
-                        });
-                        try appendEscaped(out, slice);
-                        try out.appendSlice(gpa, "</span>");
                     } else {
                         try appendEscaped(out, slice);
                     }
@@ -776,6 +762,31 @@ const Decl = struct {
         }
     }
 
+    fn resolve_var_link(
+        w: *Walk,
+        out: *std.ArrayListUnmanaged(u8),
+        node: Ast.Node.Index,
+    ) Oom!void {
+        const file_index = w.decl.file;
+        const ast = w.ast;
+        //const main_tokens = ast.nodes.items(.main_token);
+        if (ast.fullVarDecl(node)) |vd| switch (categorize_expr(file_index, vd.ast.init_node)) {
+            .alias => |decl_index| {
+                try decl_index.get().fqn(out);
+            },
+            else => {
+                try out.writer(gpa).print("src/{s}#N{d}", .{
+                    file_index.path(), node,
+                });
+                //const name_token = main_tokens[node] + 1;
+                //const name = ast.tokenSlice(name_token);
+                //try out.appendSlice(gpa, name);
+            },
+        } else {
+            log.debug("TODO resolve_var_link fn decl", .{});
+        }
+    }
+
     fn walk_field_accesses(
         w: *Walk,
         out: *std.ArrayListUnmanaged(u8),
@@ -793,9 +804,7 @@ const Decl = struct {
             .identifier => {
                 const lhs_ident = main_tokens[object_node];
                 if (w.token_links.get(lhs_ident)) |var_node| {
-                    const name_token = main_tokens[var_node] + 1;
-                    const name = ast.tokenSlice(name_token);
-                    try out.appendSlice(gpa, name);
+                    try resolve_var_link(w, out, var_node);
                 }
             },
             .field_access => {
@@ -803,8 +812,10 @@ const Decl = struct {
             },
             else => {},
         }
-        try out.append(gpa, '.');
-        try out.appendSlice(gpa, ast.tokenSlice(field_ident));
+        if (out.items.len > 0) {
+            try out.append(gpa, '.');
+            try out.appendSlice(gpa, ast.tokenSlice(field_ident));
+        }
     }
 
     /// keep in sync with "CAT_" constants in main.js
@@ -880,6 +891,12 @@ const Decl = struct {
                 if (std.zig.primitives.isPrimitive(ident_name)) {
                     return .{ .primitive = node };
                 }
+                // TODO:
+                //return .alias;
+                return .{ .global_const = node };
+            },
+
+            .field_access => {
                 // TODO:
                 //return .alias;
                 return .{ .global_const = node };

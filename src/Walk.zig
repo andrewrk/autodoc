@@ -2,8 +2,8 @@
 
 arena: std.mem.Allocator,
 token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
-token_decls: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, void),
 token_parents: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
+decl: *const @import("main.zig").Decl,
 ast: *const Ast,
 
 pub fn root(w: *Walk) !void {
@@ -598,7 +598,6 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
 
         const token_bytes = ast.tokenSlice(name_token);
         try namespace.names.put(arena, token_bytes, member_node);
-        try w.token_decls.put(arena, name_token, {});
     }
 }
 

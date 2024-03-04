@@ -49,17 +49,16 @@ what you want.
 
 ## Roadmap
 
-* doctests
 * Walk: for_range not handled correctly
+* root package alias - avoid `std.std` from ocurring
+* implement alias for `const a = b;`
+* implement alias for `const a = b.c;`
+* source view: implement scrolling to local var decls
+* source view: implement redirect when decl found
+* doctests
 * don't redundantly show doc comments in struct fields
 * functions + ability to expand source of only that function without leaving the page
 * add source view links, currently you have to use the keyboard shortcut
-* source view - resolve single identifier lookups using in-scope names
-  - if it targets an alias then jump to the alias
-  - if it is field access then resolve the alias of the LHS
-* source view - resolve identifier links to locals to link to the local decl
-* source view - make identifier links style subtler so it still looks like source
-* detect if it's the root package file and skip the top of the nav
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
 * follow imports for better categorization
@@ -67,3 +66,4 @@ what you want.
 * markdown
 * convert TODO comments into roadmap
 * only change URL on pressing enter in search box, not on key press
+* scroll to top when clicking fresh link. but don't disrupt the already working scroll history
