@@ -255,6 +255,21 @@ fn decl_field_html_fallible(
     }
 }
 
+export fn decl_fn_proto_html(decl_index: Decl.Index) String {
+    const decl = decl_index.get();
+    const ast = decl.file.ast();
+    const node_tags = ast.nodes.items(.tag);
+    const node_datas = ast.nodes.items(.data);
+    assert(node_tags[decl.ast_node] == .fn_decl);
+    const proto_node = node_datas[decl.ast_node].lhs;
+
+    string_result.clearRetainingCapacity();
+    decl.file.source_html(&string_result, proto_node) catch |err| {
+        fatal("unable to render source: {s}", .{@errorName(err)});
+    };
+    return String.init(string_result.items);
+}
+
 export fn decl_source_html(decl_index: Decl.Index) String {
     const decl = decl_index.get();
 

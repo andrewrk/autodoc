@@ -39,6 +39,7 @@ pub fn build(b: *std.Build) void {
         "decl_field_html",
         "decl_fields",
         "decl_file_path",
+        "decl_fn_proto_html",
         "decl_fqn",
         "decl_name",
         "decl_parent",
