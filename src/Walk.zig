@@ -196,7 +196,6 @@ fn expr(w: *Walk, scope: *Scope, node: Ast.Node.Index) Oom!void {
         .switch_case_inline => unreachable, // Handled in `switchExpr`.
         .switch_case_one => unreachable, // Handled in `switchExpr`.
         .switch_case_inline_one => unreachable, // Handled in `switchExpr`.
-        .switch_range => unreachable, // Handled in `switchExpr`.
 
         .asm_output => unreachable, // Handled in `asmExpr`.
         .asm_input => unreachable, // Handled in `asmExpr`.
@@ -256,6 +255,7 @@ fn expr(w: *Walk, scope: *Scope, node: Ast.Node.Index) Oom!void {
         .@"orelse",
         .array_type,
         .array_access,
+        .switch_range,
         => {
             try expr(w, scope, node_datas[node].lhs);
             try expr(w, scope, node_datas[node].rhs);
