@@ -70,3 +70,4 @@ what you want.
 * convert TODO comments into roadmap
 * only change URL on pressing enter in search box, not on key press
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
+* double dot fqn ("file..read" shows up when searching for "read")
