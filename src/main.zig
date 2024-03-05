@@ -8,6 +8,7 @@ const log = std.log;
 const assert = std.debug.assert;
 const Ast = std.zig.Ast;
 const Walk = @import("Walk.zig");
+const markdown = @import("markdown.zig");
 
 const js = struct {
     extern "js" fn log(ptr: [*]const u8, len: usize) void;
@@ -240,14 +241,12 @@ fn decl_fields_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
 
 export fn decl_field_html(decl_index: Decl.Index, field_node: Ast.Node.Index) String {
     string_result.clearRetainingCapacity();
-    decl_field_html_fallible(&string_result, &markdown_input, decl_index, field_node) catch
-        @panic("OOM");
+    decl_field_html_fallible(&string_result, decl_index, field_node) catch @panic("OOM");
     return String.init(string_result.items);
 }
 
 fn decl_field_html_fallible(
     out: *std.ArrayListUnmanaged(u8),
-    buffer: *std.ArrayListUnmanaged(u8),
     decl_index: Decl.Index,
     field_node: Ast.Node.Index,
 ) !void {
@@ -260,10 +259,9 @@ fn decl_field_html_fallible(
     const field = ast.fullContainerField(field_node).?;
     const first_doc_comment = findFirstDocComment(ast, field.firstToken());
 
-    collect_docs(buffer, ast, first_doc_comment) catch @panic("OOM");
-    if (buffer.items.len > 0) {
+    if (ast.tokens.items(.tag)[first_doc_comment] == .doc_comment) {
         try out.appendSlice(gpa, "<div class=\"fieldDocs\">");
-        render_markdown(out, buffer.items) catch @panic("OOM");
+        try render_docs(out, ast, first_doc_comment, false);
         try out.appendSlice(gpa, "</div>");
     }
 }
@@ -384,15 +382,8 @@ export fn decl_name(decl_index: Decl.Index) String {
 export fn decl_docs_html(decl_index: Decl.Index, short: bool) String {
     const decl = decl_index.get();
     const ast = decl.file.ast();
-    collect_docs(&markdown_input, ast, decl.extra_info().first_doc_comment) catch @panic("OOM");
-    const chomped = c: {
-        const s = markdown_input.items;
-        if (!short) break :c s;
-        const nl = std.mem.indexOfScalar(u8, s, '\n') orelse s.len;
-        break :c s[0..nl];
-    };
     string_result.clearRetainingCapacity();
-    render_markdown(&string_result, chomped) catch @panic("OOM");
+    render_docs(&string_result, ast, decl.extra_info().first_doc_comment, short) catch @panic("OOM");
     return String.init(string_result.items);
 }
 
@@ -413,6 +404,69 @@ fn collect_docs(
         },
         else => break,
     };
+}
+
+fn render_docs(
+    out: *std.ArrayListUnmanaged(u8),
+    ast: *const Ast,
+    first_doc_comment: Ast.TokenIndex,
+    short: bool,
+) Oom!void {
+    const token_tags = ast.tokens.items(.tag);
+
+    var parser = try markdown.Parser.init(gpa);
+    defer parser.deinit();
+    var it = first_doc_comment;
+    while (true) : (it += 1) switch (token_tags[it]) {
+        .doc_comment, .container_doc_comment => {
+            const line = ast.tokenSlice(it)[3..];
+            if (short and line.len == 0) break;
+            try parser.feedLine(line);
+        },
+        else => break,
+    };
+
+    var parsed_doc = try parser.endInput();
+    defer parsed_doc.deinit(gpa);
+
+    const Writer = std.ArrayListUnmanaged(u8).Writer;
+    const Renderer = markdown.Renderer(Writer, void);
+    const renderer: Renderer = .{
+        .context = {},
+        .renderFn = struct {
+            fn render(
+                r: Renderer,
+                doc: markdown.Document,
+                node: markdown.Document.Node.Index,
+                writer: Writer,
+            ) !void {
+                const data = doc.nodes.items(.data)[@intFromEnum(node)];
+                switch (doc.nodes.items(.tag)[@intFromEnum(node)]) {
+                    // TODO: detect identifier references (dotted paths) in
+                    // these three node types and render them appropriately.
+                    // Also, syntax highlighting can be applied in code blocks
+                    // unless the tag says otherwise.
+                    .code_block => {
+                        const tag = doc.string(data.code_block.tag);
+                        _ = tag;
+                        const content = doc.string(data.code_block.content);
+                        try writer.print("<pre><code>{}</code></pre>\n", .{markdown.fmtHtml(content)});
+                    },
+                    .code_span => {
+                        const content = doc.string(data.text.content);
+                        try writer.print("<code>{}</code>", .{markdown.fmtHtml(content)});
+                    },
+                    .text => {
+                        const content = doc.string(data.text.content);
+                        try writer.print("{}", .{markdown.fmtHtml(content)});
+                    },
+
+                    else => try Renderer.renderDefault(r, doc, node, writer),
+                }
+            }
+        }.render,
+    };
+    try renderer.render(parsed_doc, out.writer(gpa));
 }
 
 export fn decl_type_html(decl_index: Decl.Index) String {
@@ -1249,8 +1303,6 @@ export fn find_package_root(pkg: PackageIndex) Decl.Index {
 
 /// Set by `set_input_string`.
 var input_string: std.ArrayListUnmanaged(u8) = .{};
-/// Only for direct use by exported functions.
-var markdown_input: std.ArrayListUnmanaged(u8) = .{};
 
 export fn set_input_string(len: usize) [*]u8 {
     input_string.resize(gpa, len) catch @panic("OOM");
@@ -1325,18 +1377,6 @@ export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Dec
     }
 
     return Slice(Decl.Index).init(g.members.items);
-}
-
-/// Appends to `out`, does not clear it.
-fn render_markdown(out: *std.ArrayListUnmanaged(u8), input: []const u8) !void {
-    if (input.len == 0) return;
-    // TODO implement a custom markdown renderer
-    // resist urge to use a third party implementation
-    // this implementation will have zig specific tweaks such as inserting links
-    // syntax highlighting, recognizing identifiers even outside of backticks, etc.
-    try out.appendSlice(gpa, "<p>");
-    try appendEscaped(out, input);
-    try out.appendSlice(gpa, "</p>");
 }
 
 fn appendEscaped(out: *std.ArrayListUnmanaged(u8), s: []const u8) !void {
