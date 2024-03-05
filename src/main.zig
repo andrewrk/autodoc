@@ -1036,6 +1036,7 @@ pub const Decl = struct {
         const decl = parent.get();
         if (decl.parent != .none) {
             try append_parent_ns(list, decl.parent);
+            try list.appendSlice(gpa, decl.extra_info().name);
             try list.append(gpa, '.');
         }
     }
