@@ -84,18 +84,22 @@ export fn query_exec(ignore_case: bool) [*]Decl.Index {
 const max_matched_items = 2000;
 
 fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
+    const Score = packed struct(u32) {
+        points: u16,
+        segments: u16,
+    };
     const g = struct {
         var full_path_search_text: std.ArrayListUnmanaged(u8) = .{};
         var full_path_search_text_lower: std.ArrayListUnmanaged(u8) = .{};
         var doc_search_text: std.ArrayListUnmanaged(u8) = .{};
         /// Each element matches a corresponding query_results element.
-        var points: std.ArrayListUnmanaged(u32) = .{};
+        var scores: std.ArrayListUnmanaged(Score) = .{};
     };
 
     // First element stores the size of the list.
     try query_results.resize(gpa, 1);
     // Corresponding point value is meaningless and therefore undefined.
-    try g.points.resize(gpa, 1);
+    try g.scores.resize(gpa, 1);
 
     decl_loop: for (decls.items, 0..) |*decl, decl_index| {
         const info = decl.extra_info();
@@ -118,7 +122,7 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
         }
 
         var it = std.mem.tokenizeScalar(u8, query, ' ');
-        var points: u32 = 0;
+        var points: u16 = 0;
         var bypass_limit = false;
         while (it.next()) |term| {
             // exact, case sensitive match of full decl path
@@ -147,22 +151,31 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
 
         if (query_results.items.len < max_matched_items or bypass_limit) {
             try query_results.append(gpa, @enumFromInt(decl_index));
-            try g.points.append(gpa, points);
+            try g.scores.append(gpa, .{
+                .points = points,
+                .segments = @intCast(count_scalar(g.full_path_search_text.items, '.')),
+            });
         }
     }
 
     const sort_context: struct {
         pub fn swap(sc: @This(), a_index: usize, b_index: usize) void {
             _ = sc;
-            std.mem.swap(u32, &g.points.items[a_index], &g.points.items[b_index]);
+            std.mem.swap(Score, &g.scores.items[a_index], &g.scores.items[b_index]);
             std.mem.swap(Decl.Index, &query_results.items[a_index], &query_results.items[b_index]);
         }
 
         pub fn lessThan(sc: @This(), a_index: usize, b_index: usize) bool {
             _ = sc;
-            if (g.points.items[b_index] < g.points.items[a_index]) {
+            const a_score = g.scores.items[a_index];
+            const b_score = g.scores.items[b_index];
+            if (b_score.points < a_score.points) {
                 return true;
-            } else if (g.points.items[b_index] > g.points.items[a_index]) {
+            } else if (b_score.points > a_score.points) {
+                return false;
+            } else if (a_score.segments < b_score.segments) {
+                return true;
+            } else if (a_score.segments > b_score.segments) {
                 return false;
             } else {
                 const a_decl = query_results.items[a_index];
@@ -1328,4 +1341,13 @@ fn appendEscaped(out: *std.ArrayListUnmanaged(u8), s: []const u8) !void {
             else => out.appendAssumeCapacity(c),
         }
     }
+}
+
+fn count_scalar(haystack: []const u8, needle: u8) usize {
+    var total: usize = 0;
+    for (haystack) |elem| {
+        if (elem == needle)
+            total += 1;
+    }
+    return total;
 }
