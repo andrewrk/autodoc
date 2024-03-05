@@ -56,6 +56,9 @@ pub fn build(b: *std.Build) void {
         "query_exec",
         "set_input_string",
         "unpack",
+        "error_fields",
+        "identifier_string",
+        "error_field_doc",
     };
     wasm.entry = .disabled;
 

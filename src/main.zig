@@ -268,6 +268,72 @@ fn decl_field_html_fallible(
     }
 }
 
+export fn error_fields(decl_index: Decl.Index) Slice(Ast.TokenIndex) {
+    return Slice(Ast.TokenIndex).init(error_fields_fallible(decl_index) catch @panic("OOM"));
+}
+
+fn error_fields_fallible(decl_index: Decl.Index) ![]Ast.TokenIndex {
+    const g = struct {
+        var result: std.ArrayListUnmanaged(Ast.TokenIndex) = .{};
+    };
+
+    g.result.clearRetainingCapacity();
+
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+
+    const node_tags = ast.nodes.items(.tag);
+    const main_tokens = ast.nodes.items(.main_token);
+    const token_tags = ast.tokens.items(.tag);
+
+    const value_node = decl.value_node() orelse return &.{};
+    assert(node_tags[value_node] == .error_set_decl);
+
+    const error_token = main_tokens[value_node];
+    var tok_i = error_token + 2;
+    while (true) : (tok_i += 1) {
+        switch (token_tags[tok_i]) {
+            .identifier => {
+                try g.result.append(gpa, tok_i);
+            },
+            .r_brace => break,
+            .doc_comment, .comma => {},
+            else => unreachable,
+        }
+    }
+
+    return g.result.items;
+}
+
+export fn error_field_doc(decl_index: Decl.Index, token_index: Ast.TokenIndex) String {
+    const g = struct {
+        var doc_text: std.ArrayListUnmanaged(u8) = .{};
+    };
+
+    g.doc_text.clearRetainingCapacity();
+
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+    const token_tags = ast.tokens.items(.tag);
+
+    // is the previous token a docstring?
+    if (token_tags[token_index - 1] == .doc_comment) {
+        const first_doc_comment = Decl.findFirstDocComment(ast, token_index);
+        render_docs(&g.doc_text, ast, first_doc_comment, false) catch @panic("OOM");
+    }
+
+    return String.init(g.doc_text.items);
+}
+
+export fn identifier_string(decl_index: Decl.Index, token_index: Ast.TokenIndex) String {
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+    const token_tags = ast.tokens.items(.tag);
+    assert(token_tags[token_index] == .identifier);
+
+    return String.init(ast.tokenSlice(token_index));
+}
+
 export fn decl_fn_proto_html(decl_index: Decl.Index) String {
     const decl = decl_index.get();
     const ast = decl.file.ast();
