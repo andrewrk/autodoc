@@ -36,6 +36,7 @@ pub fn build(b: *std.Build) void {
         "categorize_decl",
         "decl_category_name",
         "decl_docs_html",
+        "decl_doctest_html",
         "decl_field_html",
         "decl_fields",
         "decl_file_path",

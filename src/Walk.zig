@@ -3,6 +3,8 @@
 arena: std.mem.Allocator,
 token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
 token_parents: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
+/// Maps from function declaration to doctest.
+doctests: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, Ast.Node.Index),
 file: @import("main.zig").FileIndex,
 ast: *const Ast,
 
@@ -26,6 +28,7 @@ const Scope = struct {
         base: Scope = .{ .tag = .namespace },
         parent: *Scope,
         names: std.StringArrayHashMapUnmanaged(Ast.Node.Index) = .{},
+        doctests: std.StringArrayHashMapUnmanaged(Ast.Node.Index) = .{},
     };
 
     fn lookup(start_scope: *Scope, ast: *const Ast, name: []const u8) ?Ast.Node.Index {
@@ -61,6 +64,7 @@ fn struct_decl(
     scope: *Scope,
     container_decl: Ast.full.ContainerDecl,
 ) Oom!void {
+    const arena = w.arena;
     const ast = w.ast;
     const node_tags = ast.nodes.items(.tag);
     const node_datas = ast.nodes.items(.data);
@@ -84,6 +88,12 @@ fn struct_decl(
         => {
             var buf: [1]Ast.Node.Index = undefined;
             const full = ast.fullFnProto(&buf, member).?;
+            const fn_name_token = full.ast.fn_token + 1;
+            const fn_name = ast.tokenSlice(fn_name_token);
+            if (namespace.doctests.get(fn_name)) |doctest_node| {
+                try w.doctests.put(arena, member, doctest_node);
+            }
+
             const body = if (node_tags[member] == .fn_decl) node_datas[member].rhs else 0;
             try w.fn_decl(&namespace.base, body, full);
         },
@@ -581,6 +591,7 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
     const node_tags = ast.nodes.items(.tag);
     const main_tokens = ast.nodes.items(.main_token);
     const token_tags = ast.tokens.items(.tag);
+    const node_datas = ast.nodes.items(.data);
 
     for (members) |member_node| {
         const name_token = switch (node_tags[member_node]) {
@@ -599,6 +610,16 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
                 const ident = main_tokens[member_node] + 1;
                 if (token_tags[ident] != .identifier) continue;
                 break :blk ident;
+            },
+
+            .test_decl => {
+                const ident_token = node_datas[member_node].lhs;
+                const is_doctest = token_tags[ident_token] == .identifier;
+                if (is_doctest) {
+                    const token_bytes = ast.tokenSlice(ident_token);
+                    try namespace.doctests.put(arena, token_bytes, member_node);
+                }
+                continue;
             },
 
             else => continue,

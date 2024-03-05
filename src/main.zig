@@ -280,6 +280,22 @@ export fn decl_source_html(decl_index: Decl.Index) String {
     return String.init(string_result.items);
 }
 
+export fn decl_doctest_html(decl_index: Decl.Index) String {
+    const decl = decl_index.get();
+    const walk = decl.file.walk() catch |err| {
+        log.err("failed to walk: {s}", .{@errorName(err)});
+        return String.init("");
+    };
+    const doctest_ast_node = walk.doctests.get(decl.ast_node) orelse
+        return String.init("");
+
+    string_result.clearRetainingCapacity();
+    decl.file.source_html(&string_result, doctest_ast_node) catch |err| {
+        fatal("unable to render source: {s}", .{@errorName(err)});
+    };
+    return String.init(string_result.items);
+}
+
 export fn decl_fqn(decl_index: Decl.Index) String {
     const decl = decl_index.get();
     decl.fqn(&string_result) catch @panic("OOM");
@@ -437,6 +453,11 @@ pub const FileIndex = enum(u32) {
         out: *std.ArrayListUnmanaged(u8),
         root_node: Ast.Node.Index,
     ) !void {
+        const w = try file.walk();
+        return Decl.walk_source_html(w, out, root_node);
+    }
+
+    fn walk(file: FileIndex) !*const Walk {
         const g = struct {
             var prev_walk: ?Walk = null;
             var arena_instance: std.heap.ArenaAllocator = undefined;
@@ -444,7 +465,7 @@ pub const FileIndex = enum(u32) {
 
         if (g.prev_walk) |*prev_walk| {
             if (prev_walk.file == file) {
-                return Decl.walk_source_html(prev_walk, out, root_node);
+                return prev_walk;
             }
             g.arena_instance.deinit();
         }
@@ -455,12 +476,13 @@ pub const FileIndex = enum(u32) {
             .arena = g.arena_instance.allocator(),
             .token_links = .{},
             .token_parents = .{},
+            .doctests = .{},
             .file = file,
             .ast = file.ast(),
         };
-        const walk = &g.prev_walk.?;
-        try walk.root();
-        return Decl.walk_source_html(walk, out, root_node);
+        const w = &g.prev_walk.?;
+        try w.root();
+        return w;
     }
 };
 
@@ -1145,10 +1167,6 @@ fn index_namespace(
                 });
                 const var_decl = ast.fullVarDecl(member).?;
                 try index_expr(file_index, decl_index, var_decl.ast.init_node);
-            },
-
-            .test_decl => {
-                // TODO look for doctests
             },
 
             else => continue,
