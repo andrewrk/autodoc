@@ -273,8 +273,17 @@ export fn decl_fn_proto_html(decl_index: Decl.Index) String {
     const ast = decl.file.ast();
     const node_tags = ast.nodes.items(.tag);
     const node_datas = ast.nodes.items(.data);
-    assert(node_tags[decl.ast_node] == .fn_decl);
-    const proto_node = node_datas[decl.ast_node].lhs;
+    const proto_node = switch (node_tags[decl.ast_node]) {
+        .fn_decl => node_datas[decl.ast_node].lhs,
+
+        .fn_proto,
+        .fn_proto_one,
+        .fn_proto_simple,
+        .fn_proto_multi,
+        => decl.ast_node,
+
+        else => unreachable,
+    };
 
     string_result.clearRetainingCapacity();
     decl.file.source_html(&string_result, proto_node) catch |err| {
