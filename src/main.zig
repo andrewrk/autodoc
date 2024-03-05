@@ -567,7 +567,7 @@ pub const Decl = struct {
         const start_token = ast.firstToken(root_node);
         const end_token = ast.lastToken(root_node) + 1;
 
-        var cursor: usize = 0;
+        var cursor: usize = token_starts[start_token];
 
         for (
             token_tags[start_token..end_token],
