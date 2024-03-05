@@ -62,8 +62,13 @@
         padding: 0;
         text-align: center;
       }
+      section {
+        clear: both;
+        padding-top: 1em;
+      }
       section h1 {
         border-bottom: 1px dashed;
+        margin: 0 0;
       }
       section h2 {
         font-size: 1.3em;
@@ -298,7 +303,7 @@
       <input type="search" id="search" autocomplete="off" spellcheck="false" placeholder="`s` to search, `?` to see more options">
       <div id="sectNav" class="hidden"><ul id="listNav"></ul></div>
     </div>
-    <section style="clear: both">
+    <section>
     <p id="status">Loading...</p>
     <div id="fnProto" class="hidden">
       <pre id="fnProtoCode"></pre>
