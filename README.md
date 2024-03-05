@@ -51,7 +51,6 @@ what you want.
 
 * implement view: global variables
 * implement view: primitive
-* implement view: error set
 * implement view: global constant
 * implement view: type
 * function view: parameters
