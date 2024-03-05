@@ -47,27 +47,26 @@ If the system doesn't find a file named "foo/root.zig" or "foo/foo.zig" it's goi
 to use the first file in the tar as the package root, which is probably not
 what you want.
 
-## Live Stream Roadmap
-
-* improve function prototype rendering
-
 ## Roadmap
 
-* implement the function view
-* doctests
+* implement view: global variables
+* implement view: primitive
+* implement view: error set
+* implement view: global constant
+* implement view: type
+* function view: parameters
+* function view: render fn prototype each component separate rather than source rendering
+* struct fields: render each component separate rather than via source rendering
 * implement alias for `const a = b;`
 * implement alias for `const a = b.c;`
 * source view: implement scrolling to local var decls
 * source view: implement redirect when decl found
-* struct fields: render each component separate rather than via source rendering
 * add source view links, currently you have to use the keyboard shortcut
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
-* follow imports for better categorization
-* setting for displaying private parts
 * markdown: basics such as bold, italics
 * markdown: render backtick quoted stuff as code with links
-* convert TODO comments into roadmap
 * only change URL on pressing enter in search box, not on key press
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
-* double dot fqn ("file..read" shows up when searching for "read")
+* convert TODO comments into roadmap
+* setting for displaying private parts
