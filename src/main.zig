@@ -241,7 +241,7 @@ fn decl_field_html_fallible(
     const decl = decl_index.get();
     const ast = decl.file.ast();
     try out.appendSlice(gpa, "<pre><code>");
-    try decl.source_html(out, field_node);
+    try decl.file.source_html(out, field_node);
     try out.appendSlice(gpa, "</code></pre>");
 
     const field = ast.fullContainerField(field_node).?;
@@ -259,7 +259,7 @@ export fn decl_source_html(decl_index: Decl.Index) String {
     const decl = decl_index.get();
 
     string_result.clearRetainingCapacity();
-    decl.source_html(&string_result, decl.ast_node) catch |err| {
+    decl.file.source_html(&string_result, decl.ast_node) catch |err| {
         fatal("unable to render source: {s}", .{@errorName(err)});
     };
     return String.init(string_result.items);
@@ -398,7 +398,7 @@ fn reset_with_decl_path(list: *std.ArrayListUnmanaged(u8), decl: *const Decl) Oo
     }
 }
 
-const FileIndex = enum(u32) {
+pub const FileIndex = enum(u32) {
     _,
 
     fn path(i: FileIndex) []const u8 {
@@ -415,6 +415,37 @@ const FileIndex = enum(u32) {
                 return @enumFromInt(i);
         }
         return .none;
+    }
+
+    fn source_html(
+        file: FileIndex,
+        out: *std.ArrayListUnmanaged(u8),
+        root_node: Ast.Node.Index,
+    ) !void {
+        const g = struct {
+            var prev_walk: ?Walk = null;
+            var arena_instance: std.heap.ArenaAllocator = undefined;
+        };
+
+        if (g.prev_walk) |*prev_walk| {
+            if (prev_walk.file == file) {
+                return Decl.walk_source_html(prev_walk, out, root_node);
+            }
+            g.arena_instance.deinit();
+        }
+
+        g.arena_instance = std.heap.ArenaAllocator.init(gpa);
+
+        g.prev_walk = .{
+            .arena = g.arena_instance.allocator(),
+            .token_links = .{},
+            .token_parents = .{},
+            .file = file,
+            .ast = file.ast(),
+        };
+        const walk = &g.prev_walk.?;
+        try walk.root();
+        return Decl.walk_source_html(walk, out, root_node);
     }
 };
 
@@ -537,29 +568,16 @@ pub const Decl = struct {
         };
     }
 
-    fn source_html(
-        decl: *const Decl,
+    fn walk_source_html(
+        walk: *const Walk,
         out: *std.ArrayListUnmanaged(u8),
         root_node: Ast.Node.Index,
     ) !void {
-        const ast = decl.file.ast();
-
-        var arena_instance = std.heap.ArenaAllocator.init(gpa);
-        defer arena_instance.deinit();
-        const arena = arena_instance.allocator();
+        const ast = walk.file.ast();
 
         const g = struct {
             var field_access_buffer: std.ArrayListUnmanaged(u8) = .{};
         };
-
-        var walk: Walk = .{
-            .arena = arena,
-            .token_links = .{},
-            .token_parents = .{},
-            .decl = decl,
-            .ast = ast,
-        };
-        try walk.root();
 
         const token_tags = ast.tokens.items(.tag);
         const token_starts = ast.tokens.items(.start);
@@ -675,7 +693,7 @@ pub const Decl = struct {
                         try out.appendSlice(gpa, "</span>");
                     } else if (walk.token_links.get(token_index)) |var_node| {
                         g.field_access_buffer.clearRetainingCapacity();
-                        try resolve_var_link(&walk, &g.field_access_buffer, var_node);
+                        try resolve_var_link(walk, &g.field_access_buffer, var_node);
                         try out.appendSlice(gpa, "<a href=\"#");
                         try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
                         try out.appendSlice(gpa, "\">");
@@ -683,7 +701,7 @@ pub const Decl = struct {
                         try out.appendSlice(gpa, "</a>");
                     } else if (walk.token_parents.get(token_index)) |field_access_node| {
                         g.field_access_buffer.clearRetainingCapacity();
-                        try walk_field_accesses(&walk, &g.field_access_buffer, field_access_node);
+                        try walk_field_accesses(walk, &g.field_access_buffer, field_access_node);
                         if (g.field_access_buffer.items.len > 0) {
                             try out.appendSlice(gpa, "<a href=\"#");
                             try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
@@ -774,11 +792,11 @@ pub const Decl = struct {
     }
 
     fn resolve_var_link(
-        w: *Walk,
+        w: *const Walk,
         out: *std.ArrayListUnmanaged(u8),
         node: Ast.Node.Index,
     ) Oom!void {
-        const file_index = w.decl.file;
+        const file_index = w.file;
         const ast = w.ast;
         //const main_tokens = ast.nodes.items(.main_token);
         if (ast.fullVarDecl(node)) |vd| switch (categorize_expr(file_index, vd.ast.init_node)) {
@@ -799,7 +817,7 @@ pub const Decl = struct {
     }
 
     fn walk_field_accesses(
-        w: *Walk,
+        w: *const Walk,
         out: *std.ArrayListUnmanaged(u8),
         node: Ast.Node.Index,
     ) Oom!void {

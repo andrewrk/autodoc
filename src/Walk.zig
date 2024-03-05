@@ -3,7 +3,7 @@
 arena: std.mem.Allocator,
 token_links: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
 token_parents: std.AutoArrayHashMapUnmanaged(Ast.TokenIndex, Ast.Node.Index),
-decl: *const @import("main.zig").Decl,
+file: @import("main.zig").FileIndex,
 ast: *const Ast,
 
 pub fn root(w: *Walk) !void {
