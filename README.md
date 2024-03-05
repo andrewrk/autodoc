@@ -47,15 +47,19 @@ If the system doesn't find a file named "foo/root.zig" or "foo/foo.zig" it's goi
 to use the first file in the tar as the package root, which is probably not
 what you want.
 
+## Live Stream Roadmap
+
+* improve function prototype rendering
+
 ## Roadmap
 
+* implement the function view
+* doctests
 * implement alias for `const a = b;`
 * implement alias for `const a = b.c;`
 * source view: implement scrolling to local var decls
 * source view: implement redirect when decl found
-* doctests
 * struct fields: render each component separate rather than via source rendering
-* functions + ability to expand source of only that function without leaving the page
 * add source view links, currently you have to use the keyboard shortcut
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
