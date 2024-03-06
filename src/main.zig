@@ -863,17 +863,8 @@ fn resolve_ident_link(
 
     const decl = decl_index.get();
     switch (decl.categorize()) {
-        .alias => |alias_decl| {
-            try alias_decl.get().fqn(out);
-        },
-        else => {
-            try out.writer(gpa).print("src/{s}#N{d}", .{
-                file_index.path(), decl.ast_node,
-            });
-            //const name_token = main_tokens[node] + 1;
-            //const name = ast.tokenSlice(name_token);
-            //try out.appendSlice(gpa, name);
-        },
+        .alias => |alias_decl| try alias_decl.get().fqn(out),
+        else => try decl.fqn(out),
     }
 }
 
