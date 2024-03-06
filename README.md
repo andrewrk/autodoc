@@ -63,7 +63,7 @@ what you want.
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
 * markdown: render backtick quoted stuff as code with links
-* only change URL on pressing enter in search box, not on key press
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
 * convert TODO comments into roadmap
 * shrink Ast to fit the slices
+* make the search box and nav bar stretch to fit the window
