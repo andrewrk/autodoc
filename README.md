@@ -52,7 +52,6 @@ what you want.
 * implement view: global variables
 * implement view: primitive
 * implement view: error set
-* implement view: global constant
 * implement view: type
 * implement field access alias detection (TODO in categorize_expr)
 * categorize functions that return types specially
