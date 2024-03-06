@@ -67,3 +67,4 @@ what you want.
 * convert TODO comments into roadmap
 * shrink Ast to fit the slices
 * make the search box and nav bar stretch to fit the window
+* redundant search results (search "format")
