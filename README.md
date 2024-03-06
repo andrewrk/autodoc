@@ -70,3 +70,4 @@ what you want.
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
 * convert TODO comments into roadmap
 * setting for displaying private parts
+* shrink Ast to fit the slices
