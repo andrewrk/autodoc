@@ -185,6 +185,12 @@ pub const File = struct {
                 } else {
                     log.warn("import target '{s}' did not resolve to any file", .{resolved_path});
                 }
+            } else if (std.mem.eql(u8, builtin_name, "@This")) {
+                if (file_index.get().node_decls.get(node)) |decl_index| {
+                    return .{ .alias = decl_index };
+                } else {
+                    log.warn("@This() is missing link to Decl.Index", .{});
+                }
             }
 
             return .{ .global_const = node };
@@ -260,7 +266,23 @@ const Scope = struct {
         parent: *Scope,
         names: std.StringArrayHashMapUnmanaged(Ast.Node.Index) = .{},
         doctests: std.StringArrayHashMapUnmanaged(Ast.Node.Index) = .{},
+        decl_index: Decl.Index,
     };
+
+    fn getNamespaceDecl(start_scope: *Scope) Decl.Index {
+        var it: *Scope = start_scope;
+        while (true) switch (it.tag) {
+            .top => unreachable,
+            .local => {
+                const local = @fieldParentPtr(Local, "base", it);
+                it = local.parent;
+            },
+            .namespace => {
+                const namespace = @fieldParentPtr(Namespace, "base", it);
+                return namespace.decl_index;
+            },
+        };
+    }
 
     fn lookup(start_scope: *Scope, ast: *const Ast, name: []const u8) ?Ast.Node.Index {
         const main_tokens = ast.nodes.items(.main_token);
@@ -300,6 +322,7 @@ fn struct_decl(
 
     var namespace: Scope.Namespace = .{
         .parent = scope,
+        .decl_index = parent_decl,
     };
     try w.scanDecls(&namespace, container_decl.ast.members);
 
@@ -570,18 +593,18 @@ fn expr(w: *Walk, scope: *Scope, parent_decl: Decl.Index, node: Ast.Node.Index) 
         .builtin_call_two, .builtin_call_two_comma => {
             if (node_datas[node].lhs == 0) {
                 const params = [_]Ast.Node.Index{};
-                return builtin_call(w, scope, parent_decl, &params);
+                return builtin_call(w, scope, parent_decl, node, &params);
             } else if (node_datas[node].rhs == 0) {
                 const params = [_]Ast.Node.Index{node_datas[node].lhs};
-                return builtin_call(w, scope, parent_decl, &params);
+                return builtin_call(w, scope, parent_decl, node, &params);
             } else {
                 const params = [_]Ast.Node.Index{ node_datas[node].lhs, node_datas[node].rhs };
-                return builtin_call(w, scope, parent_decl, &params);
+                return builtin_call(w, scope, parent_decl, node, &params);
             }
         },
         .builtin_call, .builtin_call_comma => {
             const params = ast.extra_data[node_datas[node].lhs..node_datas[node].rhs];
-            return builtin_call(w, scope, parent_decl, params);
+            return builtin_call(w, scope, parent_decl, node, params);
         },
 
         .call_one,
@@ -753,9 +776,23 @@ fn slice(w: *Walk, scope: *Scope, parent_decl: Decl.Index, full: Ast.full.Slice)
     try maybe_expr(w, scope, parent_decl, full.ast.sentinel);
 }
 
-fn builtin_call(w: *Walk, scope: *Scope, parent_decl: Decl.Index, params: []const Ast.Node.Index) Oom!void {
-    for (params) |node| {
-        try expr(w, scope, parent_decl, node);
+fn builtin_call(
+    w: *Walk,
+    scope: *Scope,
+    parent_decl: Decl.Index,
+    node: Ast.Node.Index,
+    params: []const Ast.Node.Index,
+) Oom!void {
+    const ast = w.file.get_ast();
+    const main_tokens = ast.nodes.items(.main_token);
+    const builtin_token = main_tokens[node];
+    const builtin_name = ast.tokenSlice(builtin_token);
+    if (std.mem.eql(u8, builtin_name, "@This")) {
+        try w.file.get().node_decls.put(gpa, node, scope.getNamespaceDecl());
+    }
+
+    for (params) |param| {
+        try expr(w, scope, parent_decl, param);
     }
 }
 
