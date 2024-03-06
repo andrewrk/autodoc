@@ -747,20 +747,6 @@ fn file_source_html(
                     break :i;
                 }
 
-                {
-                    const decl_index = file.lookup_token(token_index);
-                    if (decl_index != .none) {
-                        g.field_access_buffer.clearRetainingCapacity();
-                        try decl_index.get().fqn(&g.field_access_buffer);
-                        try out.appendSlice(gpa, "<a href=\"#");
-                        try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
-                        try out.appendSlice(gpa, "\">");
-                        try appendEscaped(out, slice);
-                        try out.appendSlice(gpa, "</a>");
-                        break :i;
-                    }
-                }
-
                 if (file.token_parents.get(token_index)) |field_access_node| {
                     g.field_access_buffer.clearRetainingCapacity();
                     try walk_field_accesses(file_index, &g.field_access_buffer, field_access_node);
@@ -774,6 +760,19 @@ fn file_source_html(
                         try appendEscaped(out, slice);
                     }
                     break :i;
+                }
+
+                {
+                    g.field_access_buffer.clearRetainingCapacity();
+                    try resolve_ident_link(file_index, &g.field_access_buffer, token_index);
+                    if (g.field_access_buffer.items.len > 0) {
+                        try out.appendSlice(gpa, "<a href=\"#");
+                        try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
+                        try out.appendSlice(gpa, "\">");
+                        try appendEscaped(out, slice);
+                        try out.appendSlice(gpa, "</a>");
+                        break :i;
+                    }
                 }
 
                 try appendEscaped(out, slice);
@@ -854,6 +853,30 @@ fn file_source_html(
     }
 }
 
+fn resolve_ident_link(
+    file_index: Walk.File.Index,
+    out: *std.ArrayListUnmanaged(u8),
+    ident_token: Ast.TokenIndex,
+) Oom!void {
+    const decl_index = file_index.get().lookup_token(ident_token);
+    if (decl_index == .none) return;
+
+    const decl = decl_index.get();
+    switch (decl.categorize()) {
+        .alias => |alias_decl| {
+            try alias_decl.get().fqn(out);
+        },
+        else => {
+            try out.writer(gpa).print("src/{s}#N{d}", .{
+                file_index.path(), decl.ast_node,
+            });
+            //const name_token = main_tokens[node] + 1;
+            //const name = ast.tokenSlice(name_token);
+            //try out.appendSlice(gpa, name);
+        },
+    }
+}
+
 fn walk_field_accesses(
     file_index: Walk.File.Index,
     out: *std.ArrayListUnmanaged(u8),
@@ -870,12 +893,7 @@ fn walk_field_accesses(
     switch (node_tags[object_node]) {
         .identifier => {
             const lhs_ident = main_tokens[object_node];
-            const decl_index = file_index.get().lookup_token(lhs_ident);
-            if (decl_index != .none) {
-                try decl_index.get().fqn(out);
-            } else {
-                log.debug("TODO link to local vars", .{});
-            }
+            try resolve_ident_link(file_index, out, lhs_ident);
         },
         .field_access => {
             try walk_field_accesses(file_index, out, object_node);
