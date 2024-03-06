@@ -29,37 +29,9 @@ pub fn build(b: *std.Build) void {
         }),
         .optimize = optimize,
     });
-    // It would be nice if Zig could just use the exact list of functions that
-    // are exported in `wasm`.
-    wasm.root_module.export_symbol_names = &.{
-        "alloc",
-        "categorize_decl",
-        "decl_category_name",
-        "decl_docs_html",
-        "decl_doctest_html",
-        "decl_field_html",
-        "decl_fields",
-        "decl_file_path",
-        "decl_fn_proto_html",
-        "decl_fqn",
-        "decl_name",
-        "decl_parent",
-        "decl_source_html",
-        "decl_type_html",
-        "find_decl",
-        "find_file_root",
-        "find_package_root",
-        "get_aliasee",
-        "namespace_members",
-        "package_name",
-        "query_begin",
-        "query_exec",
-        "set_input_string",
-        "unpack",
-        "error_fields",
-        "identifier_string",
-        "error_field_doc",
-    };
+
+    // expose exported functions to wasm
+    wasm.rdynamic = true;
     wasm.entry = .disabled;
 
     b.getInstallStep().dependOn(&b.addInstallFile(wasm.getEmittedBin(), "main.wasm").step);
