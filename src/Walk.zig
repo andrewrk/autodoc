@@ -3,7 +3,6 @@ pub var files: std.StringArrayHashMapUnmanaged(File) = .{};
 pub var decls: std.ArrayListUnmanaged(Decl) = .{};
 pub var packages: std.StringArrayHashMapUnmanaged(File.Index) = .{};
 
-arena: std.mem.Allocator,
 file: File.Index,
 
 /// keep in sync with "CAT_" constants in main.js
@@ -30,6 +29,8 @@ pub const File = struct {
     node_decls: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, Decl.Index) = .{},
     /// Maps function declarations to doctests.
     doctests: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, Ast.Node.Index) = .{},
+    /// Maps declarations to their scope.
+    scopes: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, *Scope) = .{},
 
     pub fn lookup_token(file: *File, token: Ast.TokenIndex) Decl.Index {
         const decl_node = file.ident_decls.get(token) orelse return .none;
@@ -213,17 +214,14 @@ pub fn add_file(file_name: []const u8, bytes: []u8) !File.Index {
         return file_index;
     }
 
-    var arena_instance = std.heap.ArenaAllocator.init(gpa);
-    defer arena_instance.deinit();
-
     var w: Walk = .{
-        .arena = arena_instance.allocator(),
         .file = file_index,
     };
-    var scope: Scope = .{ .tag = .top };
+    const scope = try gpa.create(Scope);
+    scope.* = .{ .tag = .top };
 
     const decl_index = try file_index.add_decl(0, .none);
-    try struct_decl(&w, &scope, decl_index, ast.containerDeclRoot());
+    try struct_decl(&w, scope, decl_index, ast.containerDeclRoot());
 
     const file = file_index.get();
     shrinkToFit(&file.ident_decls);
@@ -250,7 +248,7 @@ fn parse(source: []u8) Oom!Ast {
     return Ast.parse(gpa, adjusted_source, .zig);
 }
 
-const Scope = struct {
+pub const Scope = struct {
     tag: Tag,
 
     const Tag = enum { top, local, namespace };
@@ -284,7 +282,17 @@ const Scope = struct {
         };
     }
 
-    fn lookup(start_scope: *Scope, ast: *const Ast, name: []const u8) ?Ast.Node.Index {
+    pub fn get_child(scope: *Scope, name: []const u8) ?Ast.Node.Index {
+        switch (scope.tag) {
+            .top, .local => return null,
+            .namespace => {
+                const namespace = @fieldParentPtr(Namespace, "base", scope);
+                return namespace.names.get(name);
+            },
+        }
+    }
+
+    pub fn lookup(start_scope: *Scope, ast: *const Ast, name: []const u8) ?Ast.Node.Index {
         const main_tokens = ast.nodes.items(.main_token);
         var it: *Scope = start_scope;
         while (true) switch (it.tag) {
@@ -320,11 +328,13 @@ fn struct_decl(
     const node_tags = ast.nodes.items(.tag);
     const node_datas = ast.nodes.items(.data);
 
-    var namespace: Scope.Namespace = .{
+    const namespace = try gpa.create(Scope.Namespace);
+    namespace.* = .{
         .parent = scope,
         .decl_index = parent_decl,
     };
-    try w.scanDecls(&namespace, container_decl.ast.members);
+    try w.file.get().scopes.put(gpa, parent_decl.get().ast_node, &namespace.base);
+    try w.scanDecls(namespace, container_decl.ast.members);
 
     for (container_decl.ast.members) |member| switch (node_tags[member]) {
         .container_field_init,
@@ -803,7 +813,6 @@ fn block(
     statements: []const Ast.Node.Index,
 ) Oom!void {
     const ast = w.file.get_ast();
-    const arena = w.arena;
     const node_tags = ast.nodes.items(.tag);
     const node_datas = ast.nodes.items(.data);
 
@@ -818,11 +827,12 @@ fn block(
             => {
                 const full = ast.fullVarDecl(node).?;
                 try global_var_decl(w, scope, parent_decl, full);
-                const local = try arena.create(Scope.Local);
+                const local = try gpa.create(Scope.Local);
                 local.* = .{
                     .parent = scope,
                     .var_node = node,
                 };
+                try w.file.get().scopes.put(gpa, node, &local.base);
                 scope = &local.base;
             },
 
@@ -849,7 +859,6 @@ fn while_expr(w: *Walk, scope: *Scope, parent_decl: Decl.Index, full: Ast.full.W
 }
 
 fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.Index) Oom!void {
-    const arena = w.arena;
     const ast = w.file.get_ast();
     const node_tags = ast.nodes.items(.tag);
     const main_tokens = ast.nodes.items(.main_token);
@@ -880,7 +889,7 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
                 const is_doctest = token_tags[ident_token] == .identifier;
                 if (is_doctest) {
                     const token_bytes = ast.tokenSlice(ident_token);
-                    try namespace.doctests.put(arena, token_bytes, member_node);
+                    try namespace.doctests.put(gpa, token_bytes, member_node);
                 }
                 continue;
             },
@@ -889,7 +898,7 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
         };
 
         const token_bytes = ast.tokenSlice(name_token);
-        try namespace.names.put(arena, token_bytes, member_node);
+        try namespace.names.put(gpa, token_bytes, member_node);
     }
 }
 

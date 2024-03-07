@@ -111,6 +111,26 @@ pub fn categorize(decl: *const Decl) Walk.Category {
     return decl.file.categorize_decl(decl.ast_node);
 }
 
+/// Looks up a direct child of `decl` by name.
+pub fn get_child(decl: *const Decl, name: []const u8) ?Decl.Index {
+    const file = decl.file.get();
+    const scope = file.scopes.get(decl.ast_node) orelse return null;
+    const child_node = scope.get_child(name) orelse return null;
+    return file.node_decls.get(child_node);
+}
+
+/// Looks up a decl by name accessible in `decl`'s namespace.
+pub fn lookup(decl: *const Decl, name: []const u8) ?Decl.Index {
+    const file = decl.file.get();
+    const namespace_node = switch (decl.categorize()) {
+        .namespace => |node| node,
+        else => decl.parent.get().ast_node,
+    };
+    const scope = file.scopes.get(namespace_node) orelse return null;
+    const resolved_node = scope.lookup(&file.ast, name) orelse return null;
+    return file.node_decls.get(resolved_node);
+}
+
 pub fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
     try decl.reset_with_path(out);
     if (decl.parent != .none) {

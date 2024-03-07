@@ -259,7 +259,7 @@ fn decl_field_html_fallible(
 
     if (ast.tokens.items(.tag)[first_doc_comment] == .doc_comment) {
         try out.appendSlice(gpa, "<div class=\"fieldDocs\">");
-        try render_docs(out, ast, first_doc_comment, false);
+        try render_docs(out, decl_index, first_doc_comment, false);
         try out.appendSlice(gpa, "</div>");
     }
 }
@@ -375,9 +375,8 @@ export fn decl_name(decl_index: Decl.Index) String {
 
 export fn decl_docs_html(decl_index: Decl.Index, short: bool) String {
     const decl = decl_index.get();
-    const ast = decl.file.get_ast();
     string_result.clearRetainingCapacity();
-    render_docs(&string_result, ast, decl.extra_info().first_doc_comment, short) catch @panic("OOM");
+    render_docs(&string_result, decl_index, decl.extra_info().first_doc_comment, short) catch @panic("OOM");
     return String.init(string_result.items);
 }
 
@@ -402,10 +401,12 @@ fn collect_docs(
 
 fn render_docs(
     out: *std.ArrayListUnmanaged(u8),
-    ast: *const Ast,
+    decl_index: Decl.Index,
     first_doc_comment: Ast.TokenIndex,
     short: bool,
 ) Oom!void {
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
     const token_tags = ast.tokens.items(.tag);
 
     var parser = try markdown.Parser.init(gpa);
@@ -423,10 +424,14 @@ fn render_docs(
     var parsed_doc = try parser.endInput();
     defer parsed_doc.deinit(gpa);
 
+    const g = struct {
+        var link_buffer: std.ArrayListUnmanaged(u8) = .{};
+    };
+
     const Writer = std.ArrayListUnmanaged(u8).Writer;
-    const Renderer = markdown.Renderer(Writer, void);
+    const Renderer = markdown.Renderer(Writer, Decl.Index);
     const renderer: Renderer = .{
-        .context = {},
+        .context = decl_index,
         .renderFn = struct {
             fn render(
                 r: Renderer,
@@ -436,23 +441,28 @@ fn render_docs(
             ) !void {
                 const data = doc.nodes.items(.data)[@intFromEnum(node)];
                 switch (doc.nodes.items(.tag)[@intFromEnum(node)]) {
-                    // TODO: detect identifier references (dotted paths) in
-                    // these three node types and render them appropriately.
-                    // Also, syntax highlighting can be applied in code blocks
-                    // unless the tag says otherwise.
                     .code_block => {
+                        // TODO: syntax highlighting
                         const tag = doc.string(data.code_block.tag);
                         _ = tag;
                         const content = doc.string(data.code_block.content);
                         try writer.print("<pre><code>{}</code></pre>\n", .{markdown.fmtHtml(content)});
                     },
                     .code_span => {
+                        try writer.writeAll("<code>");
                         const content = doc.string(data.text.content);
-                        try writer.print("<code>{}</code>", .{markdown.fmtHtml(content)});
-                    },
-                    .text => {
-                        const content = doc.string(data.text.content);
-                        try writer.print("{}", .{markdown.fmtHtml(content)});
+                        if (resolve_decl_path(r.context, content)) |resolved_decl_index| {
+                            g.link_buffer.clearRetainingCapacity();
+                            try resolve_decl_link(resolved_decl_index, &g.link_buffer);
+
+                            try writer.writeAll("<a href=\"#");
+                            try writer.writeAll(g.link_buffer.items); // TODO: url escape
+                            try writer.print("\">{}</a>", .{markdown.fmtHtml(content)});
+                        } else {
+                            try writer.print("{}", .{markdown.fmtHtml(content)});
+                        }
+
+                        try writer.writeAll("</code>");
                     },
 
                     else => try Renderer.renderDefault(r, doc, node, writer),
@@ -461,6 +471,18 @@ fn render_docs(
         }.render,
     };
     try renderer.render(parsed_doc, out.writer(gpa));
+}
+
+fn resolve_decl_path(decl_index: Decl.Index, path: []const u8) ?Decl.Index {
+    var path_components = std.mem.splitScalar(u8, path, '.');
+    var current_decl_index = decl_index.get().lookup(path_components.first()) orelse return null;
+    while (path_components.next()) |component| {
+        if (categorize_decl(current_decl_index, 0) == .alias) {
+            current_decl_index = global_aliasee;
+        }
+        current_decl_index = current_decl_index.get().get_child(component) orelse return null;
+    }
+    return current_decl_index;
 }
 
 export fn decl_type_html(decl_index: Decl.Index) String {
@@ -860,7 +882,10 @@ fn resolve_ident_link(
 ) Oom!void {
     const decl_index = file_index.get().lookup_token(ident_token);
     if (decl_index == .none) return;
+    try resolve_decl_link(decl_index, out);
+}
 
+fn resolve_decl_link(decl_index: Decl.Index, out: *std.ArrayListUnmanaged(u8)) Oom!void {
     const decl = decl_index.get();
     switch (decl.categorize()) {
         .alias => |alias_decl| try alias_decl.get().fqn(out),
