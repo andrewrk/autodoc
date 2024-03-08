@@ -442,11 +442,15 @@ fn render_docs(
                 const data = doc.nodes.items(.data)[@intFromEnum(node)];
                 switch (doc.nodes.items(.tag)[@intFromEnum(node)]) {
                     .code_block => {
-                        // TODO: syntax highlighting
                         const tag = doc.string(data.code_block.tag);
-                        _ = tag;
                         const content = doc.string(data.code_block.content);
-                        try writer.print("<pre><code>{}</code></pre>\n", .{markdown.fmtHtml(content)});
+                        try writer.writeAll("<pre><code>");
+                        if (tag.len == 0 or std.mem.eql(u8, tag, "zig")) {
+                            try append_highlighted_code(writer.context.self, content);
+                        } else {
+                            try writer.print("{}", .{markdown.fmtHtml(content)});
+                        }
+                        try writer.writeAll("</code></pre>\n");
                     },
                     .code_span => {
                         try writer.writeAll("<code>");
@@ -484,6 +488,206 @@ fn resolve_decl_path(decl_index: Decl.Index, path: []const u8) ?Decl.Index {
         current_decl_index = current_decl_index.get().get_child(component) orelse return null;
     }
     return current_decl_index;
+}
+
+fn append_highlighted_code(out: *std.ArrayListUnmanaged(u8), code: [:0]const u8) Oom!void {
+    var tokenizer = std.zig.Tokenizer.init(code);
+    var pos: usize = 0;
+    while (true) {
+        const token = tokenizer.next();
+        try append_code_comments(out, code[pos..token.loc.start]);
+        if (token.tag == .eof) break;
+
+        const slice = code[token.loc.start..token.loc.end];
+        switch (token.tag) {
+            .eof => unreachable,
+
+            .keyword_addrspace,
+            .keyword_align,
+            .keyword_and,
+            .keyword_asm,
+            .keyword_async,
+            .keyword_await,
+            .keyword_break,
+            .keyword_catch,
+            .keyword_comptime,
+            .keyword_const,
+            .keyword_continue,
+            .keyword_defer,
+            .keyword_else,
+            .keyword_enum,
+            .keyword_errdefer,
+            .keyword_error,
+            .keyword_export,
+            .keyword_extern,
+            .keyword_for,
+            .keyword_if,
+            .keyword_inline,
+            .keyword_noalias,
+            .keyword_noinline,
+            .keyword_nosuspend,
+            .keyword_opaque,
+            .keyword_or,
+            .keyword_orelse,
+            .keyword_packed,
+            .keyword_anyframe,
+            .keyword_pub,
+            .keyword_resume,
+            .keyword_return,
+            .keyword_linksection,
+            .keyword_callconv,
+            .keyword_struct,
+            .keyword_suspend,
+            .keyword_switch,
+            .keyword_test,
+            .keyword_threadlocal,
+            .keyword_try,
+            .keyword_union,
+            .keyword_unreachable,
+            .keyword_usingnamespace,
+            .keyword_var,
+            .keyword_volatile,
+            .keyword_allowzero,
+            .keyword_while,
+            .keyword_anytype,
+            .keyword_fn,
+            => {
+                try out.appendSlice(gpa, "<span class=\"tok-kw\">");
+                try appendEscaped(out, slice);
+                try out.appendSlice(gpa, "</span>");
+            },
+
+            .string_literal,
+            .char_literal,
+            .multiline_string_literal_line,
+            => {
+                try out.appendSlice(gpa, "<span class=\"tok-str\">");
+                try appendEscaped(out, slice);
+                try out.appendSlice(gpa, "</span>");
+            },
+
+            .builtin => {
+                try out.appendSlice(gpa, "<span class=\"tok-builtin\">");
+                try appendEscaped(out, slice);
+                try out.appendSlice(gpa, "</span>");
+            },
+
+            .doc_comment,
+            .container_doc_comment,
+            => {
+                try out.appendSlice(gpa, "<span class=\"tok-comment\">");
+                try appendEscaped(out, slice);
+                try out.appendSlice(gpa, "</span>");
+            },
+
+            .identifier => {
+                if (std.mem.eql(u8, slice, "undefined") or
+                    std.mem.eql(u8, slice, "null") or
+                    std.mem.eql(u8, slice, "true") or
+                    std.mem.eql(u8, slice, "false"))
+                {
+                    try out.appendSlice(gpa, "<span class=\"tok-null\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                } else if (std.zig.primitives.isPrimitive(slice)) {
+                    try out.appendSlice(gpa, "<span class=\"tok-type\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                } else {
+                    try appendEscaped(out, slice);
+                }
+            },
+
+            .number_literal => {
+                try out.appendSlice(gpa, "<span class=\"tok-number\">");
+                try appendEscaped(out, slice);
+                try out.appendSlice(gpa, "</span>");
+            },
+
+            .bang,
+            .pipe,
+            .pipe_pipe,
+            .pipe_equal,
+            .equal,
+            .equal_equal,
+            .equal_angle_bracket_right,
+            .bang_equal,
+            .l_paren,
+            .r_paren,
+            .semicolon,
+            .percent,
+            .percent_equal,
+            .l_brace,
+            .r_brace,
+            .l_bracket,
+            .r_bracket,
+            .period,
+            .period_asterisk,
+            .ellipsis2,
+            .ellipsis3,
+            .caret,
+            .caret_equal,
+            .plus,
+            .plus_plus,
+            .plus_equal,
+            .plus_percent,
+            .plus_percent_equal,
+            .plus_pipe,
+            .plus_pipe_equal,
+            .minus,
+            .minus_equal,
+            .minus_percent,
+            .minus_percent_equal,
+            .minus_pipe,
+            .minus_pipe_equal,
+            .asterisk,
+            .asterisk_equal,
+            .asterisk_asterisk,
+            .asterisk_percent,
+            .asterisk_percent_equal,
+            .asterisk_pipe,
+            .asterisk_pipe_equal,
+            .arrow,
+            .colon,
+            .slash,
+            .slash_equal,
+            .comma,
+            .ampersand,
+            .ampersand_equal,
+            .question_mark,
+            .angle_bracket_left,
+            .angle_bracket_left_equal,
+            .angle_bracket_angle_bracket_left,
+            .angle_bracket_angle_bracket_left_equal,
+            .angle_bracket_angle_bracket_left_pipe,
+            .angle_bracket_angle_bracket_left_pipe_equal,
+            .angle_bracket_right,
+            .angle_bracket_right_equal,
+            .angle_bracket_angle_bracket_right,
+            .angle_bracket_angle_bracket_right_equal,
+            .tilde,
+            .invalid,
+            .invalid_periodasterisks,
+            => try appendEscaped(out, slice),
+        }
+
+        pos = token.loc.end;
+    }
+}
+
+fn append_code_comments(out: *std.ArrayListUnmanaged(u8), code: []const u8) Oom!void {
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, code, pos, "//")) |comment_start| {
+        try appendEscaped(out, code[pos..comment_start]);
+
+        const comment_end = std.mem.indexOfScalarPos(u8, code, comment_start, '\n') orelse code.len;
+        try out.appendSlice(gpa, "<span class=\"tok-comment\">");
+        try appendEscaped(out, code[comment_start..comment_end]);
+        try out.appendSlice(gpa, "</span>");
+
+        pos = comment_end;
+    }
+    try appendEscaped(out, code[pos..]);
 }
 
 export fn decl_type_html(decl_index: Decl.Index) String {
@@ -666,7 +870,7 @@ fn file_source_html(
         start_token..,
     ) |tag, start, token_index| {
         const between = ast.source[cursor..start];
-        try appendEscaped(out, between);
+        try append_code_comments(out, between);
         if (tag == .eof) break;
         const slice = ast.tokenSlice(token_index);
         cursor = start + slice.len;
