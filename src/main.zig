@@ -477,8 +477,9 @@ fn resolve_decl_path(decl_index: Decl.Index, path: []const u8) ?Decl.Index {
     var path_components = std.mem.splitScalar(u8, path, '.');
     var current_decl_index = decl_index.get().lookup(path_components.first()) orelse return null;
     while (path_components.next()) |component| {
-        if (categorize_decl(current_decl_index, 0) == .alias) {
-            current_decl_index = global_aliasee;
+        switch (current_decl_index.get().categorize()) {
+            .alias => |aliasee| current_decl_index = aliasee,
+            else => {},
         }
         current_decl_index = current_decl_index.get().get_child(component) orelse return null;
     }
