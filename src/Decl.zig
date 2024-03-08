@@ -124,8 +124,8 @@ pub fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
 pub fn reset_with_path(decl: *const Decl, list: *std.ArrayListUnmanaged(u8)) Oom!void {
     list.clearRetainingCapacity();
 
-    // Prefer the package name alias.
-    for (Walk.packages.keys(), Walk.packages.values()) |pkg_name, pkg_file| {
+    // Prefer the module name alias.
+    for (Walk.modules.keys(), Walk.modules.values()) |pkg_name, pkg_file| {
         if (pkg_file == decl.file) {
             try list.ensureUnusedCapacity(gpa, pkg_name.len + 1);
             list.appendSliceAssumeCapacity(pkg_name);

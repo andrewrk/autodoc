@@ -1,7 +1,7 @@
 //! Find and annotate identifiers with links to their declarations.
 pub var files: std.StringArrayHashMapUnmanaged(File) = .{};
 pub var decls: std.ArrayListUnmanaged(Decl) = .{};
-pub var packages: std.StringArrayHashMapUnmanaged(File.Index) = .{};
+pub var modules: std.StringArrayHashMapUnmanaged(File.Index) = .{};
 
 arena: std.mem.Allocator,
 file: File.Index,

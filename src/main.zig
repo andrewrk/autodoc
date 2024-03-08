@@ -491,7 +491,7 @@ fn unpack_inner(tar_bytes: []u8) !void {
                     const file_name = try gpa.dupe(u8, tar_file.name);
                     if (std.mem.indexOfScalar(u8, file_name, '/')) |pkg_name_end| {
                         const pkg_name = file_name[0..pkg_name_end];
-                        const gop = try Walk.packages.getOrPut(gpa, pkg_name);
+                        const gop = try Walk.modules.getOrPut(gpa, pkg_name);
                         const file: Walk.File.Index = @enumFromInt(Walk.files.entries.len);
                         if (!gop.found_existing or
                             std.mem.eql(u8, file_name[pkg_name_end..], "/root.zig") or
@@ -527,13 +527,13 @@ fn ascii_lower(bytes: []u8) void {
     for (bytes) |*b| b.* = std.ascii.toLower(b.*);
 }
 
-export fn package_name(index: u32) String {
-    const names = Walk.packages.keys();
+export fn module_name(index: u32) String {
+    const names = Walk.modules.keys();
     return String.init(if (index >= names.len) "" else names[index]);
 }
 
-export fn find_package_root(pkg: Walk.PackageIndex) Decl.Index {
-    const root_file = Walk.packages.values()[@intFromEnum(pkg)];
+export fn find_module_root(pkg: Walk.PackageIndex) Decl.Index {
+    const root_file = Walk.modules.values()[@intFromEnum(pkg)];
     const result = root_file.findRootDecl();
     assert(result != .none);
     return result;

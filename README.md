@@ -35,7 +35,7 @@ python -m http.server
 
 Finally, create the tarball to serve as the input file, name it `sources.tar`,
 and put it also into `zig-out/`. The system expects the top level of the
-tarball to be the set of packages documented. So for the Zig standard library
+tarball to be the set of modules documented. So for the Zig standard library
 you would do this: `tar cf std.tar std/`. Don't compress it; the idea is to
 rely on HTTP compression.
 
@@ -44,7 +44,7 @@ set of files that zig installs to zig-out when you run `zig build`, which is
 the same as the set of files that are provided on ziglang.org/download.
 
 If the system doesn't find a file named "foo/root.zig" or "foo/foo.zig" it's going
-to use the first file in the tar as the package root, which is probably not
+to use the first file in the tar as the module root, which is probably not
 what you want.
 
 ## Roadmap
