@@ -51,21 +51,18 @@ what you want.
 
 * implement view: global variables
 * implement view: primitive
-* implement view: global constant
 * implement view: type
+* implement field access alias detection (TODO in categorize_expr)
+* categorize functions that return types specially
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
 * struct fields: render each component separate rather than via source rendering
-* implement alias for `const a = b;`
-* implement alias for `const a = b.c;`
-* source view: implement scrolling to local var decls
-* source view: implement redirect when decl found
+* resolve links such as "#std.fs.File.posix.fchmod"
 * add source view links, currently you have to use the keyboard shortcut
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
-* markdown: basics such as bold, italics
 * markdown: render backtick quoted stuff as code with links
 * only change URL on pressing enter in search box, not on key press
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
 * convert TODO comments into roadmap
-* setting for displaying private parts
+* shrink Ast to fit the slices
