@@ -53,7 +53,6 @@ what you want.
 * implement view: primitive
 * implement view: error set
 * implement view: type
-* implement field access alias detection (TODO in categorize_expr)
 * categorize functions that return types specially
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
@@ -62,9 +61,8 @@ what you want.
 * add source view links, currently you have to use the keyboard shortcut
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
-* markdown: render backtick quoted stuff as code with links
-* scroll to top when clicking fresh link. but don't disrupt the already working scroll history
 * convert TODO comments into roadmap
 * shrink Ast to fit the slices
 * make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
+* scroll to top when clicking fresh link. but don't disrupt the already working scroll history

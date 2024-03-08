@@ -29,7 +29,9 @@ pub const File = struct {
     node_decls: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, Decl.Index) = .{},
     /// Maps function declarations to doctests.
     doctests: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, Ast.Node.Index) = .{},
-    /// Maps declarations to their scope.
+    /// root node => its namespace scope
+    /// struct/union/enum/opaque decl node => its namespace scope
+    /// local var decl node => its local variable scope
     scopes: std.AutoArrayHashMapUnmanaged(Ast.Node.Index, *Scope) = .{},
 
     pub fn lookup_token(file: *File, token: Ast.TokenIndex) Decl.Index {
@@ -98,9 +100,11 @@ pub const File = struct {
         }
 
         pub fn categorize_expr(file_index: File.Index, node: Ast.Node.Index) Category {
+            const file = file_index.get();
             const ast = file_index.get_ast();
             const node_tags = ast.nodes.items(.tag);
             const node_datas = ast.nodes.items(.data);
+            const main_tokens = ast.nodes.items(.main_token);
             return switch (node_tags[node]) {
                 .container_decl,
                 .container_decl_trailing,
@@ -126,15 +130,28 @@ pub const File = struct {
                         return .{ .primitive = node };
                     }
 
-                    const decl_index = file_index.get().lookup_token(name_token);
-                    if (decl_index != .none) return .{ .alias = decl_index };
+                    if (file.ident_decls.get(name_token)) |decl_node| {
+                        const decl_index = file.node_decls.get(decl_node) orelse .none;
+                        if (decl_index != .none) return .{ .alias = decl_index };
+                        return categorize_decl(file_index, decl_node);
+                    }
 
                     return .{ .global_const = node };
                 },
 
                 .field_access => {
-                    // TODO:
-                    //return .alias;
+                    const object_node = node_datas[node].lhs;
+                    const dot_token = main_tokens[node];
+                    const field_ident = dot_token + 1;
+                    const field_name = ast.tokenSlice(field_ident);
+
+                    switch (categorize_expr(file_index, object_node)) {
+                        .alias => |aliasee| if (aliasee.get().get_child(field_name)) |decl_index| {
+                            return .{ .alias = decl_index };
+                        },
+                        else => {},
+                    }
+
                     return .{ .global_const = node };
                 },
 
@@ -199,7 +216,7 @@ pub const File = struct {
     };
 };
 
-pub const PackageIndex = enum(u32) {
+pub const ModuleIndex = enum(u32) {
     _,
 };
 
@@ -221,13 +238,14 @@ pub fn add_file(file_name: []const u8, bytes: []u8) !File.Index {
     scope.* = .{ .tag = .top };
 
     const decl_index = try file_index.add_decl(0, .none);
-    try struct_decl(&w, scope, decl_index, ast.containerDeclRoot());
+    try struct_decl(&w, scope, decl_index, 0, ast.containerDeclRoot());
 
     const file = file_index.get();
     shrinkToFit(&file.ident_decls);
     shrinkToFit(&file.token_parents);
     shrinkToFit(&file.node_decls);
     shrinkToFit(&file.doctests);
+    shrinkToFit(&file.scopes);
 
     return file_index;
 }
@@ -322,6 +340,7 @@ fn struct_decl(
     w: *Walk,
     scope: *Scope,
     parent_decl: Decl.Index,
+    node: Ast.Node.Index,
     container_decl: Ast.full.ContainerDecl,
 ) Oom!void {
     const ast = w.file.get_ast();
@@ -333,7 +352,7 @@ fn struct_decl(
         .parent = scope,
         .decl_index = parent_decl,
     };
-    try w.file.get().scopes.put(gpa, parent_decl.get().ast_node, &namespace.base);
+    try w.file.get().scopes.putNoClobber(gpa, node, &namespace.base);
     try w.scanDecls(namespace, container_decl.ast.members);
 
     for (container_decl.ast.members) |member| switch (node_tags[member]) {
@@ -711,7 +730,7 @@ fn expr(w: *Walk, scope: *Scope, parent_decl: Decl.Index, node: Ast.Node.Index) 
         .tagged_union_two_trailing,
         => {
             var buf: [2]Ast.Node.Index = undefined;
-            return struct_decl(w, scope, parent_decl, ast.fullContainerDecl(&buf, node).?);
+            return struct_decl(w, scope, parent_decl, node, ast.fullContainerDecl(&buf, node).?);
         },
 
         .array_type_sentinel => {
@@ -832,7 +851,7 @@ fn block(
                     .parent = scope,
                     .var_node = node,
                 };
-                try w.file.get().scopes.put(gpa, node, &local.base);
+                try w.file.get().scopes.putNoClobber(gpa, node, &local.base);
                 scope = &local.base;
             },
 

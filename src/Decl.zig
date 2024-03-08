@@ -113,19 +113,25 @@ pub fn categorize(decl: *const Decl) Walk.Category {
 
 /// Looks up a direct child of `decl` by name.
 pub fn get_child(decl: *const Decl, name: []const u8) ?Decl.Index {
-    const file = decl.file.get();
-    const scope = file.scopes.get(decl.ast_node) orelse return null;
-    const child_node = scope.get_child(name) orelse return null;
-    return file.node_decls.get(child_node);
+    switch (decl.categorize()) {
+        .alias => |aliasee| return aliasee.get().get_child(name),
+        .namespace => |node| {
+            const file = decl.file.get();
+            const scope = file.scopes.get(node) orelse return null;
+            const child_node = scope.get_child(name) orelse return null;
+            return file.node_decls.get(child_node);
+        },
+        else => return null,
+    }
 }
 
 /// Looks up a decl by name accessible in `decl`'s namespace.
 pub fn lookup(decl: *const Decl, name: []const u8) ?Decl.Index {
-    const file = decl.file.get();
     const namespace_node = switch (decl.categorize()) {
         .namespace => |node| node,
         else => decl.parent.get().ast_node,
     };
+    const file = decl.file.get();
     const scope = file.scopes.get(namespace_node) orelse return null;
     const resolved_node = scope.lookup(&file.ast, name) orelse return null;
     return file.node_decls.get(resolved_node);

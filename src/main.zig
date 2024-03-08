@@ -555,7 +555,7 @@ export fn module_name(index: u32) String {
     return String.init(if (index >= names.len) "" else names[index]);
 }
 
-export fn find_module_root(pkg: Walk.PackageIndex) Decl.Index {
+export fn find_module_root(pkg: Walk.ModuleIndex) Decl.Index {
     const root_file = Walk.modules.values()[@intFromEnum(pkg)];
     const result = root_file.findRootDecl();
     assert(result != .none);
@@ -579,18 +579,17 @@ export fn find_file_root() Decl.Index {
 
 /// Uses `input_string`.
 export fn find_decl() Decl.Index {
-    const g = struct {
-        var match_fqn: std.ArrayListUnmanaged(u8) = .{};
-    };
-    for (Walk.decls.items, 0..) |*decl, decl_index| {
-        decl.fqn(&g.match_fqn) catch @panic("OOM");
-        if (std.mem.eql(u8, g.match_fqn.items, input_string.items)) {
-            //const path = @as(Decl.Index, @enumFromInt(decl_index)).get().file.path();
-            //log.debug("find_decl '{s}' found in {s}", .{ input_string.items, path });
-            return @enumFromInt(decl_index);
-        }
+    var path_components = std.mem.splitScalar(u8, input_string.items, '.');
+    const file = Walk.modules.get(path_components.first()) orelse return .none;
+    var current_decl_index = file.findRootDecl();
+    while (path_components.next()) |component| {
+        while (true) switch (current_decl_index.get().categorize()) {
+            .alias => |aliasee| current_decl_index = aliasee,
+            else => break,
+        };
+        current_decl_index = current_decl_index.get().get_child(component) orelse return .none;
     }
-    return .none;
+    return current_decl_index;
 }
 
 /// Set only by `categorize_decl`; read only by `get_aliasee`, valid only
