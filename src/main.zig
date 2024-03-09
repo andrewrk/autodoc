@@ -757,6 +757,13 @@ fn file_source_html(
             },
 
             .identifier => i: {
+                if (token_index > 0 and token_tags[token_index - 1] == .keyword_fn) {
+                    try out.appendSlice(gpa, "<span class=\"tok-fn\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                    break :i;
+                }
+
                 if (std.mem.eql(u8, slice, "undefined") or
                     std.mem.eql(u8, slice, "null") or
                     std.mem.eql(u8, slice, "true") or

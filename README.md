@@ -66,3 +66,4 @@ what you want.
 * make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
+* enum fields should not be linkified (example: `std.log.Level`)
