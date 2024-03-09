@@ -213,16 +213,27 @@ const ErrorIdentifier = packed struct(u64) {
     token_index: Ast.TokenIndex,
     decl_index: Decl.Index,
 
-    fn html(ei: ErrorIdentifier, out: *std.ArrayListUnmanaged(u8)) Oom!void {
+    fn html(ei: ErrorIdentifier, base_decl: Decl.Index, out: *std.ArrayListUnmanaged(u8)) Oom!void {
         const decl_index = ei.decl_index;
         const ast = decl_index.get().file.get_ast();
         const name = ast.tokenSlice(ei.token_index);
         const first_doc_comment = Decl.findFirstDocComment(ast, ei.token_index);
+        const has_docs = ast.tokens.items(.tag)[first_doc_comment] == .doc_comment;
+        const has_link = base_decl != decl_index;
 
         try out.appendSlice(gpa, "<dt>");
         try out.appendSlice(gpa, name);
+        if (has_link) {
+            try out.appendSlice(gpa, " <a href=\"#");
+            // TODO escape url
+            try decl_index.get().fqn_append(out);
+            try out.appendSlice(gpa, "\">");
+            try out.appendSlice(gpa, decl_index.get().extra_info().name);
+            try out.appendSlice(gpa, "</a>");
+        }
         try out.appendSlice(gpa, "</dt>");
-        if (ast.tokens.items(.tag)[first_doc_comment] == .doc_comment) {
+
+        if (has_docs) {
             try out.appendSlice(gpa, "<dd>");
             try render_docs(out, decl_index, first_doc_comment, false);
             try out.appendSlice(gpa, "</dd>");
@@ -341,9 +352,9 @@ fn decl_fields_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
     return g.result.items;
 }
 
-export fn error_html(error_identifier: ErrorIdentifier) String {
+export fn error_html(base_decl: Decl.Index, error_identifier: ErrorIdentifier) String {
     string_result.clearRetainingCapacity();
-    error_identifier.html(&string_result) catch @panic("OOM");
+    error_identifier.html(base_decl, &string_result) catch @panic("OOM");
     return String.init(string_result.items);
 }
 

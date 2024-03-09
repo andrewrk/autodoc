@@ -138,7 +138,12 @@ pub fn lookup(decl: *const Decl, name: []const u8) ?Decl.Index {
 }
 
 pub fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
-    try decl.reset_with_path(out);
+    out.clearRetainingCapacity();
+    try fqn_append(decl, out);
+}
+
+pub fn fqn_append(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
+    try decl.append_path(out);
     if (decl.parent != .none) {
         try append_parent_ns(out, decl.parent);
         try out.appendSlice(gpa, decl.extra_info().name);
@@ -149,7 +154,11 @@ pub fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
 
 pub fn reset_with_path(decl: *const Decl, list: *std.ArrayListUnmanaged(u8)) Oom!void {
     list.clearRetainingCapacity();
+    try append_path(decl, list);
+}
 
+pub fn append_path(decl: *const Decl, list: *std.ArrayListUnmanaged(u8)) Oom!void {
+    const start = list.items.len;
     // Prefer the module name alias.
     for (Walk.modules.keys(), Walk.modules.values()) |pkg_name, pkg_file| {
         if (pkg_file == decl.file) {
@@ -163,7 +172,7 @@ pub fn reset_with_path(decl: *const Decl, list: *std.ArrayListUnmanaged(u8)) Oom
     const file_path = decl.file.path();
     try list.ensureUnusedCapacity(gpa, file_path.len + 1);
     list.appendSliceAssumeCapacity(file_path);
-    for (list.items) |*byte| switch (byte.*) {
+    for (list.items[start..]) |*byte| switch (byte.*) {
         '/' => byte.* = '.',
         else => continue,
     };

@@ -49,7 +49,6 @@ what you want.
 
 ## Roadmap
 
-* link error names to the decl they come from
 * prefer the error set that has doc comments
 * implement view: global variables
 * implement view: primitive
