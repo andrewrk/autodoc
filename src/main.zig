@@ -209,7 +209,102 @@ fn Slice(T: type) type {
     };
 }
 
+const ErrorIdentifier = packed struct(u64) {
+    token_index: Ast.TokenIndex,
+    decl_index: Decl.Index,
+
+    fn html(ei: ErrorIdentifier, out: *std.ArrayListUnmanaged(u8)) Oom!void {
+        const decl_index = ei.decl_index;
+        const ast = decl_index.get().file.get_ast();
+        const name = ast.tokenSlice(ei.token_index);
+        const first_doc_comment = Decl.findFirstDocComment(ast, ei.token_index);
+
+        try out.appendSlice(gpa, "<dt>");
+        try out.appendSlice(gpa, name);
+        try out.appendSlice(gpa, "</dt>");
+        if (ast.tokens.items(.tag)[first_doc_comment] == .doc_comment) {
+            try out.appendSlice(gpa, "<dd>");
+            try render_docs(out, decl_index, first_doc_comment, false);
+            try out.appendSlice(gpa, "</dd>");
+        }
+    }
+};
+
 var string_result: std.ArrayListUnmanaged(u8) = .{};
+
+export fn decl_error_set(decl_index: Decl.Index) Slice(ErrorIdentifier) {
+    return Slice(ErrorIdentifier).init(decl_error_set_fallible(decl_index) catch @panic("OOM"));
+}
+
+fn decl_error_set_fallible(decl_index: Decl.Index) Oom![]ErrorIdentifier {
+    const g = struct {
+        var result: std.StringArrayHashMapUnmanaged(ErrorIdentifier) = .{};
+    };
+    g.result.clearRetainingCapacity();
+    try addErrorsFromDecl(decl_index, &g.result);
+    return g.result.values();
+}
+
+fn addErrorsFromDecl(
+    decl_index: Decl.Index,
+    out: *std.StringArrayHashMapUnmanaged(ErrorIdentifier),
+) Oom!void {
+    const node = decl_index.get().categorize().error_set;
+    try addErrorsFromExpr(decl_index, out, node);
+}
+
+fn addErrorsFromExpr(
+    decl_index: Decl.Index,
+    out: *std.StringArrayHashMapUnmanaged(ErrorIdentifier),
+    node: Ast.Node.Index,
+) Oom!void {
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+    const node_tags = ast.nodes.items(.tag);
+    const node_datas = ast.nodes.items(.data);
+
+    switch (decl.file.categorize_expr(node)) {
+        .error_set => |n| switch (node_tags[n]) {
+            .error_set_decl => {
+                try addErrorsFromNode(decl_index, out, node);
+            },
+            .merge_error_sets => {
+                try addErrorsFromExpr(decl_index, out, node_datas[node].lhs);
+                try addErrorsFromExpr(decl_index, out, node_datas[node].rhs);
+            },
+            else => unreachable,
+        },
+        .alias => |aliasee| {
+            try addErrorsFromDecl(aliasee, out);
+        },
+        else => return,
+    }
+}
+
+fn addErrorsFromNode(
+    decl_index: Decl.Index,
+    out: *std.StringArrayHashMapUnmanaged(ErrorIdentifier),
+    node: Ast.Node.Index,
+) Oom!void {
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+    const main_tokens = ast.nodes.items(.main_token);
+    const token_tags = ast.tokens.items(.tag);
+    const error_token = main_tokens[node];
+    var tok_i = error_token + 2;
+    while (true) : (tok_i += 1) switch (token_tags[tok_i]) {
+        .doc_comment, .comma => {},
+        .identifier => {
+            const name = ast.tokenSlice(tok_i);
+            try out.put(gpa, name, .{
+                .token_index = tok_i,
+                .decl_index = decl_index,
+            });
+        },
+        .r_brace => break,
+        else => unreachable,
+    };
+}
 
 export fn decl_fields(decl_index: Decl.Index) Slice(Ast.Node.Index) {
     return Slice(Ast.Node.Index).init(decl_fields_fallible(decl_index) catch @panic("OOM"));
@@ -235,6 +330,12 @@ fn decl_fields_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
         else => continue,
     };
     return g.result.items;
+}
+
+export fn error_html(error_identifier: ErrorIdentifier) String {
+    string_result.clearRetainingCapacity();
+    error_identifier.html(&string_result) catch @panic("OOM");
+    return String.init(string_result.items);
 }
 
 export fn decl_field_html(decl_index: Decl.Index, field_node: Ast.Node.Index) String {
@@ -605,7 +706,7 @@ export fn categorize_decl(decl_index: Decl.Index, resolve_alias_count: usize) Wa
     var decl = decl_index.get();
     while (true) {
         const result = decl.categorize();
-        switch (decl.categorize()) {
+        switch (result) {
             .alias => |new_index| {
                 assert(new_index != .none);
                 global_aliasee = new_index;

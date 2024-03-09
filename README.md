@@ -49,11 +49,12 @@ what you want.
 
 ## Roadmap
 
+* prefer the error set that has doc comments
 * implement view: global variables
 * implement view: primitive
-* implement view: error set
 * implement view: type
 * categorize functions that return types specially
+* function view: error set
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
 * struct fields: render each component separate rather than via source rendering

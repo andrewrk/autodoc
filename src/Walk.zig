@@ -105,6 +105,7 @@ pub const File = struct {
             const node_tags = ast.nodes.items(.tag);
             const node_datas = ast.nodes.items(.data);
             const main_tokens = ast.nodes.items(.main_token);
+            log.debug("categorize_expr tag {s}", .{@tagName(node_tags[node])});
             return switch (node_tags[node]) {
                 .container_decl,
                 .container_decl_trailing,
@@ -121,6 +122,7 @@ pub const File = struct {
                 => .{ .namespace = node },
 
                 .error_set_decl,
+                .merge_error_sets,
                 => .{ .error_set = node },
 
                 .identifier => {
