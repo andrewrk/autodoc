@@ -201,6 +201,9 @@ pub const File = struct {
                 const str_bytes = ast.tokenSlice(str_lit_token);
                 const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch @panic("OOM");
                 defer gpa.free(file_path);
+                if (modules.get(file_path)) |imported_file_index| {
+                    return .{ .alias = File.Index.findRootDecl(imported_file_index) };
+                }
                 const base_path = file_index.path();
                 const resolved_path = std.fs.path.resolvePosix(gpa, &.{
                     base_path, "..", file_path,
@@ -209,8 +212,8 @@ pub const File = struct {
                 log.debug("from '{s}' @import '{s}' resolved='{s}'", .{
                     base_path, file_path, resolved_path,
                 });
-                if (Walk.files.getIndex(resolved_path)) |imported_file_index| {
-                    return .{ .alias = Walk.File.Index.findRootDecl(@enumFromInt(imported_file_index)) };
+                if (files.getIndex(resolved_path)) |imported_file_index| {
+                    return .{ .alias = File.Index.findRootDecl(@enumFromInt(imported_file_index)) };
                 } else {
                     log.warn("import target '{s}' did not resolve to any file", .{resolved_path});
                 }
