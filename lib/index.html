@@ -169,6 +169,10 @@
         overflow-x: hidden;
       }
 
+      ul.columns {
+        column-width: 20em;
+      }
+
       .tok-kw {
           color: #333;
           font-weight: bold;
@@ -342,12 +346,12 @@
     </div>
     <div id="sectTypes" class="hidden">
       <h2>Types</h2>
-      <ul id="listTypes">
+      <ul id="listTypes" class="columns">
       </ul>
     </div>
     <div id="sectNamespaces" class="hidden">
       <h2>Namespaces</h2>
-      <ul id="listNamespaces">
+      <ul id="listNamespaces" class="columns">
       </ul>
     </div>
     <div id="sectGlobalVars" class="hidden">
@@ -371,7 +375,7 @@
     </div>
     <div id="sectErrSets" class="hidden">
       <h2>Error Sets</h2>
-      <ul id="listErrSets">
+      <ul id="listErrSets" class="columns">
       </ul>
     </div>
     <div id="sectDocTests" class="hidden">
