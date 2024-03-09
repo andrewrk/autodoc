@@ -56,13 +56,12 @@ what you want.
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
 * struct fields: render each component separate rather than via source rendering
-* resolve links such as "#std.fs.File.posix.fchmod"
 * add source view links, currently you have to use the keyboard shortcut
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
 * convert TODO comments into roadmap
-* shrink Ast to fit the slices
 * make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
 * enum fields should not be linkified (example: `std.log.Level`)
+* shrink Ast to fit the slices

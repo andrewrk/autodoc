@@ -271,6 +271,13 @@ export fn fn_error_set_decl(decl_index: Decl.Index, node: Ast.Node.Index) Decl.I
     };
 }
 
+export fn decl_field_count(decl_index: Decl.Index) u32 {
+    switch (decl_index.get().categorize()) {
+        .namespace => |node| return decl_index.get().file.get().field_count(node),
+        else => return 0,
+    }
+}
+
 fn decl_error_set_fallible(decl_index: Decl.Index) Oom![]ErrorIdentifier {
     error_set_result.clearRetainingCapacity();
     try addErrorsFromDecl(decl_index, &error_set_result);

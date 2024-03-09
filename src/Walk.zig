@@ -39,6 +39,13 @@ pub const File = struct {
         return file.node_decls.get(decl_node) orelse return .none;
     }
 
+    pub fn field_count(file: *const File, node: Ast.Node.Index) u32 {
+        const scope = file.scopes.get(node) orelse return 0;
+        if (scope.tag != .namespace) return 0;
+        const namespace = @fieldParentPtr(Scope.Namespace, "base", scope);
+        return namespace.field_count;
+    }
+
     pub const Index = enum(u32) {
         _,
 
@@ -285,6 +292,7 @@ pub const Scope = struct {
         names: std.StringArrayHashMapUnmanaged(Ast.Node.Index) = .{},
         doctests: std.StringArrayHashMapUnmanaged(Ast.Node.Index) = .{},
         decl_index: Decl.Index,
+        field_count: u32,
     };
 
     fn getNamespaceDecl(start_scope: *Scope) Decl.Index {
@@ -353,6 +361,7 @@ fn struct_decl(
     namespace.* = .{
         .parent = scope,
         .decl_index = parent_decl,
+        .field_count = 0,
     };
     try w.file.get().scopes.putNoClobber(gpa, node, &namespace.base);
     try w.scanDecls(namespace, container_decl.ast.members);
@@ -912,6 +921,14 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
                     const token_bytes = ast.tokenSlice(ident_token);
                     try namespace.doctests.put(gpa, token_bytes, member_node);
                 }
+                continue;
+            },
+
+            .container_field_init,
+            .container_field_align,
+            .container_field,
+            => {
+                namespace.field_count += 1;
                 continue;
             },
 
