@@ -49,7 +49,6 @@ what you want.
 
 ## Pre-Merge Roadmap
 
-* categorize functions that return types specially
 * implement view: functions that return types that end with `return struct`
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering

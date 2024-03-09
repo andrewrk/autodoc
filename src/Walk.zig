@@ -9,12 +9,15 @@ file: File.Index,
 pub const Category = union(enum(u8)) {
     namespace: Ast.Node.Index,
     global_variable: Ast.Node.Index,
+    /// A function that has not been detected as returning a type.
     function: Ast.Node.Index,
     primitive: Ast.Node.Index,
     error_set: Ast.Node.Index,
     global_const: Ast.Node.Index,
     alias: Decl.Index,
     type,
+    /// A function that returns a type.
+    type_function: Ast.Node.Index,
 
     pub const Tag = @typeInfo(Category).Union.tag_type.?;
 };
@@ -100,10 +103,25 @@ pub const File = struct {
                 .fn_proto_one,
                 .fn_proto_simple,
                 .fn_decl,
-                => return .{ .function = node },
+                => {
+                    var buf: [1]Ast.Node.Index = undefined;
+                    const full = ast.fullFnProto(&buf, node).?;
+                    return categorize_func(file_index, node, full);
+                },
 
                 else => unreachable,
             }
+        }
+
+        pub fn categorize_func(
+            file_index: File.Index,
+            node: Ast.Node.Index,
+            full: Ast.full.FnProto,
+        ) Category {
+            return switch (categorize_expr(file_index, full.ast.return_type)) {
+                .namespace, .type => .{ .type_function = node },
+                else => .{ .function = node },
+            };
         }
 
         pub fn categorize_expr(file_index: File.Index, node: Ast.Node.Index) Category {
