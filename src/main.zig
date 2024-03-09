@@ -235,7 +235,7 @@ const ErrorIdentifier = packed struct(u64) {
         if (has_link) {
             try out.appendSlice(gpa, " <a href=\"#");
             // TODO escape url
-            try decl_index.get().fqn_append(out);
+            try decl_index.get().fqn(out);
             try out.appendSlice(gpa, "\">");
             try out.appendSlice(gpa, decl_index.get().extra_info().name);
             try out.appendSlice(gpa, "</a>");
@@ -473,6 +473,7 @@ export fn decl_doctest_html(decl_index: Decl.Index) String {
 
 export fn decl_fqn(decl_index: Decl.Index) String {
     const decl = decl_index.get();
+    string_result.clearRetainingCapacity();
     decl.fqn(&string_result) catch @panic("OOM");
     return String.init(string_result.items);
 }

@@ -137,12 +137,8 @@ pub fn lookup(decl: *const Decl, name: []const u8) ?Decl.Index {
     return file.node_decls.get(resolved_node);
 }
 
+/// Appends the fully qualified name to `out`.
 pub fn fqn(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
-    out.clearRetainingCapacity();
-    try fqn_append(decl, out);
-}
-
-pub fn fqn_append(decl: *const Decl, out: *std.ArrayListUnmanaged(u8)) Oom!void {
     try decl.append_path(out);
     if (decl.parent != .none) {
         try append_parent_ns(out, decl.parent);
