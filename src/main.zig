@@ -665,7 +665,13 @@ fn file_source_html(
         start_token..,
     ) |tag, start, token_index| {
         const between = ast.source[cursor..start];
-        try appendEscaped(out, between);
+        if (std.mem.trim(u8, between, " \t\r\n").len > 0) {
+            try out.appendSlice(gpa, "<span class=\"tok-comment\">");
+            try appendEscaped(out, between);
+            try out.appendSlice(gpa, "</span>");
+        } else if (between.len > 0) {
+            try out.appendSlice(gpa, between);
+        }
         if (tag == .eof) break;
         const slice = ast.tokenSlice(token_index);
         cursor = start + slice.len;
