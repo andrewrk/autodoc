@@ -5,11 +5,11 @@ package documentation.
 
 ## Status
 
-It's at the proof-of-concept stage. Not feature complete, let alone polished.
+Nearly reached feature parity with previous implementation.
 
-However, based on these results, I expect this to be a better way forward than
-a ZIR-based documentation generation system. This system already has source
-listings for every file with links back to the API docs, for example.
+[Will be upstreamed soon](https://github.com/ziglang/zig/pull/19208)
+
+See the roadmap below.
 
 ## Development
 
@@ -47,7 +47,7 @@ If the system doesn't find a file named "foo/root.zig" or "foo/foo.zig" it's goi
 to use the first file in the tar as the module root, which is probably not
 what you want.
 
-## Roadmap
+## Pre-Merge Roadmap
 
 * categorize functions that return types specially
 * implement view: functions that return types that end with `return struct`
@@ -63,6 +63,8 @@ what you want.
 * make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
+
+## Post-Merge Roadmap
 
 * enum fields should not be linkified (example: `std.log.Level`)
 * shrink Ast to fit the slices
