@@ -242,27 +242,43 @@ const ErrorIdentifier = packed struct(u64) {
 };
 
 var string_result: std.ArrayListUnmanaged(u8) = .{};
+var error_set_result: std.StringArrayHashMapUnmanaged(ErrorIdentifier) = .{};
 
 export fn decl_error_set(decl_index: Decl.Index) Slice(ErrorIdentifier) {
     return Slice(ErrorIdentifier).init(decl_error_set_fallible(decl_index) catch @panic("OOM"));
 }
 
-fn decl_error_set_fallible(decl_index: Decl.Index) Oom![]ErrorIdentifier {
-    const g = struct {
-        var result: std.StringArrayHashMapUnmanaged(ErrorIdentifier) = .{};
+export fn error_set_node_list(base_decl: Decl.Index, node: Ast.Node.Index) Slice(ErrorIdentifier) {
+    error_set_result.clearRetainingCapacity();
+    addErrorsFromExpr(base_decl, &error_set_result, node) catch @panic("OOM");
+    sort_error_set_result();
+    return Slice(ErrorIdentifier).init(error_set_result.values());
+}
+
+export fn fn_error_set_decl(decl_index: Decl.Index, node: Ast.Node.Index) Decl.Index {
+    return switch (decl_index.get().file.categorize_expr(node)) {
+        .alias => |aliasee| fn_error_set_decl(aliasee, aliasee.get().ast_node),
+        else => decl_index,
     };
-    g.result.clearRetainingCapacity();
-    try addErrorsFromDecl(decl_index, &g.result);
+}
+
+fn decl_error_set_fallible(decl_index: Decl.Index) Oom![]ErrorIdentifier {
+    error_set_result.clearRetainingCapacity();
+    try addErrorsFromDecl(decl_index, &error_set_result);
+    sort_error_set_result();
+    return error_set_result.values();
+}
+
+fn sort_error_set_result() void {
     const sort_context: struct {
         pub fn lessThan(sc: @This(), a_index: usize, b_index: usize) bool {
             _ = sc;
-            const a_name = g.result.keys()[a_index];
-            const b_name = g.result.keys()[b_index];
+            const a_name = error_set_result.keys()[a_index];
+            const b_name = error_set_result.keys()[b_index];
             return std.mem.lessThan(u8, a_name, b_name);
         }
     } = .{};
-    g.result.sortUnstable(sort_context);
-    return g.result.values();
+    error_set_result.sortUnstable(sort_context);
 }
 
 fn addErrorsFromDecl(
@@ -440,6 +456,20 @@ export fn decl_fqn(decl_index: Decl.Index) String {
 export fn decl_parent(decl_index: Decl.Index) Decl.Index {
     const decl = decl_index.get();
     return decl.parent;
+}
+
+export fn fn_error_set(decl_index: Decl.Index) Ast.Node.Index {
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+    var buf: [1]Ast.Node.Index = undefined;
+    const full = ast.fullFnProto(&buf, decl.ast_node).?;
+    const node_tags = ast.nodes.items(.tag);
+    const node_datas = ast.nodes.items(.data);
+    return switch (node_tags[full.ast.return_type]) {
+        .error_set_decl => full.ast.return_type,
+        .error_union => node_datas[full.ast.return_type].lhs,
+        else => 0,
+    };
 }
 
 export fn decl_file_path(decl_index: Decl.Index) String {

@@ -54,7 +54,6 @@ what you want.
 * implement view: primitive
 * implement view: type
 * categorize functions that return types specially
-* function view: error set
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
 * struct fields: render each component separate rather than via source rendering
