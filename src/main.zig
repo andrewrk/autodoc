@@ -939,11 +939,7 @@ fn file_source_html(
                     break :i;
                 }
 
-                if (std.mem.eql(u8, slice, "undefined") or
-                    std.mem.eql(u8, slice, "null") or
-                    std.mem.eql(u8, slice, "true") or
-                    std.mem.eql(u8, slice, "false"))
-                {
+                if (Walk.isPrimitiveNonType(slice)) {
                     try out.appendSlice(gpa, "<span class=\"tok-null\">");
                     try appendEscaped(out, slice);
                     try out.appendSlice(gpa, "</span>");

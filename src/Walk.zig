@@ -135,9 +135,11 @@ pub const File = struct {
                 .identifier => {
                     const name_token = ast.nodes.items(.main_token)[node];
                     const ident_name = ast.tokenSlice(name_token);
-                    if (std.zig.primitives.isPrimitive(ident_name)) {
+                    if (isPrimitiveNonType(ident_name))
                         return .{ .primitive = node };
-                    }
+
+                    if (std.zig.primitives.isPrimitive(ident_name))
+                        return .type;
 
                     if (file.ident_decls.get(name_token)) |decl_node| {
                         const decl_index = file.node_decls.get(decl_node) orelse .none;
@@ -938,6 +940,13 @@ fn scanDecls(w: *Walk, namespace: *Scope.Namespace, members: []const Ast.Node.In
         const token_bytes = ast.tokenSlice(name_token);
         try namespace.names.put(gpa, token_bytes, member_node);
     }
+}
+
+pub fn isPrimitiveNonType(name: []const u8) bool {
+    return std.mem.eql(u8, name, "undefined") or
+        std.mem.eql(u8, name, "null") or
+        std.mem.eql(u8, name, "true") or
+        std.mem.eql(u8, name, "false");
 }
 
 //test {
