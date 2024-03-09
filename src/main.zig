@@ -748,18 +748,25 @@ export fn find_file_root() Decl.Index {
 }
 
 /// Uses `input_string`.
+/// Tries to look up the Decl component-wise but then falls back to a file path
+/// based scan.
 export fn find_decl() Decl.Index {
-    var path_components = std.mem.splitScalar(u8, input_string.items, '.');
-    const file = Walk.modules.get(path_components.first()) orelse return .none;
-    var current_decl_index = file.findRootDecl();
-    while (path_components.next()) |component| {
-        while (true) switch (current_decl_index.get().categorize()) {
-            .alias => |aliasee| current_decl_index = aliasee,
-            else => break,
-        };
-        current_decl_index = current_decl_index.get().get_child(component) orelse return .none;
+    const result = Decl.find(input_string.items);
+    if (result != .none) return result;
+
+    const g = struct {
+        var match_fqn: std.ArrayListUnmanaged(u8) = .{};
+    };
+    for (Walk.decls.items, 0..) |*decl, decl_index| {
+        g.match_fqn.clearRetainingCapacity();
+        decl.fqn(&g.match_fqn) catch @panic("OOM");
+        if (std.mem.eql(u8, g.match_fqn.items, input_string.items)) {
+            //const path = @as(Decl.Index, @enumFromInt(decl_index)).get().file.path();
+            //log.debug("find_decl '{s}' found in {s}", .{ input_string.items, path });
+            return @enumFromInt(decl_index);
+        }
     }
-    return current_decl_index;
+    return .none;
 }
 
 /// Set only by `categorize_decl`; read only by `get_aliasee`, valid only

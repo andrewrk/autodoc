@@ -201,6 +201,21 @@ pub fn findFirstDocComment(ast: *const Ast, token: Ast.TokenIndex) Ast.TokenInde
     return it;
 }
 
+/// Successively looks up each component.
+pub fn find(search_string: []const u8) Decl.Index {
+    var path_components = std.mem.splitScalar(u8, search_string, '.');
+    const file = Walk.modules.get(path_components.first()) orelse return .none;
+    var current_decl_index = file.findRootDecl();
+    while (path_components.next()) |component| {
+        while (true) switch (current_decl_index.get().categorize()) {
+            .alias => |aliasee| current_decl_index = aliasee,
+            else => break,
+        };
+        current_decl_index = current_decl_index.get().get_child(component) orelse return .none;
+    }
+    return current_decl_index;
+}
+
 const Decl = @This();
 const std = @import("std");
 const Ast = std.zig.Ast;

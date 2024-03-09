@@ -52,7 +52,6 @@ what you want.
 * implement view: functions that return types that end with `return struct`
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
-* navigate to `#std.crypto.random`, click `tlcsprng` in nav, 404
 * categorize an alias such as `std.zig.Ast.NodeList` as a type
 * struct fields: render each component separate rather than via source rendering
 * add source view links, currently you have to use the keyboard shortcut
@@ -69,3 +68,4 @@ what you want.
 * shrink Ast to fit the slices
 * linkification of methods (example: `std.array_hash_map.ArrayHashMap.count`)
 * navigating to source from a decl should scroll to the decl
+* in source view, make `@imports` into links, but keep same syntax highlighting
