@@ -242,6 +242,15 @@ fn decl_error_set_fallible(decl_index: Decl.Index) Oom![]ErrorIdentifier {
     };
     g.result.clearRetainingCapacity();
     try addErrorsFromDecl(decl_index, &g.result);
+    const sort_context: struct {
+        pub fn lessThan(sc: @This(), a_index: usize, b_index: usize) bool {
+            _ = sc;
+            const a_name = g.result.keys()[a_index];
+            const b_name = g.result.keys()[b_index];
+            return std.mem.lessThan(u8, a_name, b_name);
+        }
+    } = .{};
+    g.result.sortUnstable(sort_context);
     return g.result.values();
 }
 
