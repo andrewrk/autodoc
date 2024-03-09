@@ -616,13 +616,6 @@ fn render_docs(
             ) !void {
                 const data = doc.nodes.items(.data)[@intFromEnum(node)];
                 switch (doc.nodes.items(.tag)[@intFromEnum(node)]) {
-                    .code_block => {
-                        // TODO: syntax highlighting
-                        const tag = doc.string(data.code_block.tag);
-                        _ = tag;
-                        const content = doc.string(data.code_block.content);
-                        try writer.print("<pre><code>{}</code></pre>\n", .{markdown.fmtHtml(content)});
-                    },
                     .code_span => {
                         try writer.writeAll("<code>");
                         const content = doc.string(data.text.content);

@@ -584,7 +584,7 @@ test "code blocks" {
         \\<pre><code>Hello, world!
         \\This is some code.
         \\</code></pre>
-        \\<pre><code class="zig test">const std = @import(&quot;std&quot;);
+        \\<pre><code>const std = @import(&quot;std&quot;);
         \\
         \\test {
         \\    try std.testing.expect(2 + 2 == 4);
