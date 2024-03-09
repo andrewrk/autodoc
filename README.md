@@ -49,12 +49,13 @@ what you want.
 
 ## Roadmap
 
-* implement view: global variables
 * implement view: primitive
 * implement view: type
 * categorize functions that return types specially
+* implement view: functions that return types that end with `return struct`
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
+* navigate to `#std.crypto.random`, click `tlcsprng` in nav, 404
 * struct fields: render each component separate rather than via source rendering
 * add source view links, currently you have to use the keyboard shortcut
 * include struct field names and doc comments in search query matching
@@ -63,5 +64,8 @@ what you want.
 * make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
+
 * enum fields should not be linkified (example: `std.log.Level`)
 * shrink Ast to fit the slices
+* linkification of methods (example: `std.array_hash_map.ArrayHashMap.count`)
+* navigating to source from a decl should scroll to the decl
