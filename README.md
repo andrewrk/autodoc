@@ -49,7 +49,6 @@ what you want.
 
 ## Roadmap
 
-* prefer the error set that has doc comments
 * implement view: global variables
 * implement view: primitive
 * implement view: type

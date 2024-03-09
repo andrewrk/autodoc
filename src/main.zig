@@ -213,6 +213,15 @@ const ErrorIdentifier = packed struct(u64) {
     token_index: Ast.TokenIndex,
     decl_index: Decl.Index,
 
+    fn hasDocs(ei: ErrorIdentifier) bool {
+        const decl_index = ei.decl_index;
+        const ast = decl_index.get().file.get_ast();
+        const token_tags = ast.tokens.items(.tag);
+        const token_index = ei.token_index;
+        if (token_index == 0) return false;
+        return token_tags[token_index - 1] == .doc_comment;
+    }
+
     fn html(ei: ErrorIdentifier, base_decl: Decl.Index, out: *std.ArrayListUnmanaged(u8)) Oom!void {
         const decl_index = ei.decl_index;
         const ast = decl_index.get().file.get_ast();
@@ -332,10 +341,18 @@ fn addErrorsFromNode(
         .doc_comment, .comma => {},
         .identifier => {
             const name = ast.tokenSlice(tok_i);
-            try out.put(gpa, name, .{
+            const gop = try out.getOrPut(gpa, name);
+            // If there are more than one, take the one with doc comments.
+            // If they both have doc comments, prefer the existing one.
+            const new: ErrorIdentifier = .{
                 .token_index = tok_i,
                 .decl_index = decl_index,
-            });
+            };
+            if (!gop.found_existing or
+                (!gop.value_ptr.hasDocs() and new.hasDocs()))
+            {
+                gop.value_ptr.* = new;
+            }
         },
         .r_brace => break,
         else => unreachable,
