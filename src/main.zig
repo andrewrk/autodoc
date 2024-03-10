@@ -304,8 +304,11 @@ fn addErrorsFromDecl(
     decl_index: Decl.Index,
     out: *std.StringArrayHashMapUnmanaged(ErrorIdentifier),
 ) Oom!void {
-    const node = decl_index.get().categorize().error_set;
-    try addErrorsFromExpr(decl_index, out, node);
+    switch (decl_index.get().categorize()) {
+        .error_set => |node| try addErrorsFromExpr(decl_index, out, node),
+        .alias => |aliasee| try addErrorsFromDecl(aliasee, out),
+        else => |cat| log.debug("unable to addErrorsFromDecl: {any}", .{cat}),
+    }
 }
 
 fn addErrorsFromExpr(
