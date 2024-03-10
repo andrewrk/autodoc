@@ -49,7 +49,6 @@ what you want.
 
 ## Pre-Merge Roadmap
 
-* nav to `#std.fs.File`, `fs` in breadcrumb links incorrectly to `#std`
 * render member functions better (e.g. most of `#std.os`)
 * implement view: functions that return types that end with `return struct`
 * function view: parameters
