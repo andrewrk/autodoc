@@ -53,14 +53,13 @@ what you want.
 * implement view: functions that return types that end with `return struct`
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
-* struct fields: render each component separate rather than via source rendering
 * add source view links, currently you have to use the keyboard shortcut
-* make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
 * convert TODO comments into roadmap
 
 ## Post-Merge Roadmap
 
+* struct fields: render each component separate rather than via source rendering
 * infer comptime_int constants (example: members of `#std.time`)
 * when global const has a type of `type`, categorize it as a type despite its value
   - example: `std.DynLib` (requires patching to add type annotation)
