@@ -127,6 +127,17 @@ pub const File = struct {
             };
         }
 
+        pub fn categorize_expr_deep(file_index: File.Index, start_node: Ast.Node.Index) Category {
+            var node = start_node;
+            while (true) {
+                const result = categorize_expr(file_index, node);
+                switch (result) {
+                    .alias => |aliasee| node = aliasee.get().value_node() orelse return result,
+                    else => return result,
+                }
+            }
+        }
+
         pub fn categorize_expr(file_index: File.Index, node: Ast.Node.Index) Category {
             const file = file_index.get();
             const ast = file_index.get_ast();
@@ -220,11 +231,27 @@ pub const File = struct {
                     return categorize_call(file_index, node, ast.fullCall(&buf, node).?);
                 },
 
-                //.if_simple,
-                //.@"if",
-                //=> {
-                //    const if_full = tree.fullIf(node).?;
-                //},
+                .if_simple,
+                .@"if",
+                => {
+                    const if_full = ast.fullIf(node).?;
+                    if (if_full.ast.else_expr != 0) {
+                        const then_cat = categorize_expr_deep(file_index, if_full.ast.then_expr);
+                        const else_cat = categorize_expr_deep(file_index, if_full.ast.else_expr);
+                        if (then_cat == .type_type and else_cat == .type_type) {
+                            return .type_type;
+                        } else if (then_cat == .error_set and else_cat == .error_set) {
+                            return .{ .error_set = node };
+                        } else if (then_cat == .type or else_cat == .type or
+                            then_cat == .namespace or else_cat == .namespace or
+                            then_cat == .error_set or else_cat == .error_set or
+                            then_cat == .type_function or else_cat == .type_function)
+                        {
+                            return .type;
+                        }
+                    }
+                    return .{ .global_const = node };
+                },
 
                 .optional_type,
                 .array_type,
