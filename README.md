@@ -49,16 +49,20 @@ what you want.
 
 ## Pre-Merge Roadmap
 
-* render member functions better (e.g. bottom of std)
+* nav to `#std.fs.File`, `fs` in breadcrumb links incorrectly to `#std`
+* render member functions better (e.g. most of `#std.os`)
 * implement view: functions that return types that end with `return struct`
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
 * add source view links, currently you have to use the keyboard shortcut
 * redundant search results (search "format")
-* convert TODO comments into roadmap
 
 ## Post-Merge Roadmap
 
+* in query_exec_fallible, sorting should also check the local namespace inside the file
+* walk assign_destructure not implemented yet
+* escape URLs when rendering html (look for `missing_feature_url_escape`)
+* implement renderHome for multiple modules
 * struct fields: render each component separate rather than via source rendering
 * infer comptime_int constants (example: members of `#std.time`)
 * when global const has a type of `type`, categorize it as a type despite its value
@@ -72,3 +76,7 @@ what you want.
 * in source view, make `@imports` into links, but keep same syntax highlighting
 * include struct field names and doc comments in search query matching
 * include function parameter names and doc comments in search query matching
+* instead of logging "can't index foo because it has syntax errors" put it in the UI
+* in Walk.expr() it is missing support for asm_input/asm_output nodes
+* in renderNamespace, handle an aliasing loop
+* add a history item when clicking a search result (it already works when keyboard triggered)

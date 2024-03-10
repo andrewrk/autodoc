@@ -291,7 +291,6 @@ pub fn add_file(file_name: []const u8, bytes: []u8) !File.Index {
     try files.put(gpa, file_name, .{ .ast = ast });
 
     if (ast.errors.len > 0) {
-        // TODO: expose this in the UI
         log.err("can't index '{s}' because it has syntax errors", .{file_index.path()});
         return file_index;
     }
@@ -680,7 +679,8 @@ fn expr(w: *Walk, scope: *Scope, parent_decl: Decl.Index, node: Ast.Node.Index) 
         => {
             const full = ast.fullAsm(node).?;
             for (full.ast.items) |n| {
-                // TODO handle .asm_input, .asm_output
+                // There is a missing call here to expr() for .asm_input and
+                // .asm_output nodes.
                 _ = n;
             }
             try expr(w, scope, parent_decl, full.ast.template);
@@ -923,7 +923,7 @@ fn block(
             },
 
             .assign_destructure => {
-                // TODO
+                log.debug("walk assign_destructure not implemented yet", .{});
             },
 
             .grouped_expression => try expr(w, scope, parent_decl, node_datas[node].lhs),

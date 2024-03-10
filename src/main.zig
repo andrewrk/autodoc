@@ -1,3 +1,6 @@
+/// Delete this to find out where URL escaping needs to be added.
+const missing_feature_url_escape = true;
+
 const gpa = std.heap.wasm_allocator;
 
 const std = @import("std");
@@ -80,7 +83,7 @@ export fn query_exec(ignore_case: bool) [*]Decl.Index {
     return query_results.items.ptr;
 }
 
-const max_matched_items = 2000;
+const max_matched_items = 1000;
 
 fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
     const Score = packed struct(u32) {
@@ -181,7 +184,7 @@ fn query_exec_fallible(query: []const u8, ignore_case: bool) !void {
                 const b_decl = query_results.items[b_index];
                 const a_file_path = a_decl.get().file.path();
                 const b_file_path = b_decl.get().file.path();
-                // TODO Also check the local namespace  inside the file
+                // This neglects to check the local namespace inside the file.
                 return std.mem.lessThan(u8, b_file_path, a_file_path);
             }
         }
@@ -234,7 +237,7 @@ const ErrorIdentifier = packed struct(u64) {
         try out.appendSlice(gpa, name);
         if (has_link) {
             try out.appendSlice(gpa, " <a href=\"#");
-            // TODO escape url
+            _ = missing_feature_url_escape;
             try decl_index.get().fqn(out);
             try out.appendSlice(gpa, "\">");
             try out.appendSlice(gpa, decl_index.get().extra_info().name);
@@ -626,7 +629,8 @@ fn render_docs(
                             try resolve_decl_link(resolved_decl_index, &g.link_buffer);
 
                             try writer.writeAll("<a href=\"#");
-                            try writer.writeAll(g.link_buffer.items); // TODO: url escape
+                            _ = missing_feature_url_escape;
+                            try writer.writeAll(g.link_buffer.items);
                             try writer.print("\">{}</a>", .{markdown.fmtHtml(content)});
                         } else {
                             try writer.print("{}", .{markdown.fmtHtml(content)});
@@ -971,7 +975,8 @@ fn file_source_html(
                     try walk_field_accesses(file_index, &g.field_access_buffer, field_access_node);
                     if (g.field_access_buffer.items.len > 0) {
                         try out.appendSlice(gpa, "<a href=\"#");
-                        try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
+                        _ = missing_feature_url_escape;
+                        try out.appendSlice(gpa, g.field_access_buffer.items);
                         try out.appendSlice(gpa, "\">");
                         try appendEscaped(out, slice);
                         try out.appendSlice(gpa, "</a>");
@@ -986,7 +991,8 @@ fn file_source_html(
                     try resolve_ident_link(file_index, &g.field_access_buffer, token_index);
                     if (g.field_access_buffer.items.len > 0) {
                         try out.appendSlice(gpa, "<a href=\"#");
-                        try out.appendSlice(gpa, g.field_access_buffer.items); // TODO url escape
+                        _ = missing_feature_url_escape;
+                        try out.appendSlice(gpa, g.field_access_buffer.items);
                         try out.appendSlice(gpa, "\">");
                         try appendEscaped(out, slice);
                         try out.appendSlice(gpa, "</a>");
