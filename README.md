@@ -49,7 +49,6 @@ what you want.
 
 ## Pre-Merge Roadmap
 
-* implement view: functions that return types that end with `return struct`
 * add source view links, currently you have to use the keyboard shortcut
 
 ## Post-Merge Roadmap

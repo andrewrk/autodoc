@@ -372,6 +372,10 @@ fn addErrorsFromNode(
     };
 }
 
+export fn type_fn_fields(decl_index: Decl.Index) Slice(Ast.Node.Index) {
+    return decl_fields(decl_index);
+}
+
 export fn decl_fields(decl_index: Decl.Index) Slice(Ast.Node.Index) {
     return Slice(Ast.Node.Index).init(decl_fields_fallible(decl_index) catch @panic("OOM"));
 }
@@ -871,6 +875,10 @@ export fn categorize_decl(decl_index: Decl.Index, resolve_alias_count: usize) Wa
         }
         return result;
     }
+}
+
+export fn type_fn_members(parent: Decl.Index, include_private: bool) Slice(Decl.Index) {
+    return namespace_members(parent, include_private);
 }
 
 export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Decl.Index) {
