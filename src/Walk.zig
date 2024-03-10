@@ -201,7 +201,40 @@ pub const File = struct {
                     return categorize_builtin_call(file_index, node, params);
                 },
 
+                .call_one,
+                .call_one_comma,
+                .async_call_one,
+                .async_call_one_comma,
+                .call,
+                .call_comma,
+                .async_call,
+                .async_call_comma,
+                => {
+                    var buf: [1]Ast.Node.Index = undefined;
+                    return categorize_call(file_index, node, ast.fullCall(&buf, node).?);
+                },
+
                 else => .{ .global_const = node },
+            };
+        }
+
+        fn categorize_call(
+            file_index: File.Index,
+            node: Ast.Node.Index,
+            call: Ast.full.Call,
+        ) Category {
+            return switch (categorize_expr(file_index, call.ast.fn_expr)) {
+                .type_function => .type,
+                .alias => |aliasee| categorize_decl_as_callee(aliasee, node),
+                else => .{ .global_const = node },
+            };
+        }
+
+        fn categorize_decl_as_callee(decl_index: Decl.Index, call_node: Ast.Node.Index) Category {
+            return switch (decl_index.get().categorize()) {
+                .type_function => .type,
+                .alias => |aliasee| categorize_decl_as_callee(aliasee, call_node),
+                else => .{ .global_const = call_node },
             };
         }
 
