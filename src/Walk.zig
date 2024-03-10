@@ -220,6 +220,22 @@ pub const File = struct {
                     return categorize_call(file_index, node, ast.fullCall(&buf, node).?);
                 },
 
+                //.if_simple,
+                //.@"if",
+                //=> {
+                //    const if_full = tree.fullIf(node).?;
+                //},
+
+                .optional_type,
+                .array_type,
+                .array_type_sentinel,
+                .ptr_type_aligned,
+                .ptr_type_sentinel,
+                .ptr_type,
+                .ptr_type_bit_range,
+                .anyframe_type,
+                => .type,
+
                 else => .{ .global_const = node },
             };
         }
