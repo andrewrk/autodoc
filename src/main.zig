@@ -415,7 +415,7 @@ fn decl_field_html_fallible(
     const decl = decl_index.get();
     const ast = decl.file.get_ast();
     try out.appendSlice(gpa, "<pre><code>");
-    try file_source_html(decl.file, out, field_node);
+    try file_source_html(decl.file, out, field_node, .{});
     try out.appendSlice(gpa, "</code></pre>");
 
     const field = ast.fullContainerField(field_node).?;
@@ -446,7 +446,12 @@ export fn decl_fn_proto_html(decl_index: Decl.Index) String {
     };
 
     string_result.clearRetainingCapacity();
-    file_source_html(decl.file, &string_result, proto_node) catch |err| {
+    file_source_html(decl.file, &string_result, proto_node, .{
+        .skip_doc_comments = true,
+        .skip_comments = true,
+        .collapse_whitespace = true,
+        .fn_link = decl_index,
+    }) catch |err| {
         fatal("unable to render source: {s}", .{@errorName(err)});
     };
     return String.init(string_result.items);
@@ -456,7 +461,7 @@ export fn decl_source_html(decl_index: Decl.Index) String {
     const decl = decl_index.get();
 
     string_result.clearRetainingCapacity();
-    file_source_html(decl.file, &string_result, decl.ast_node) catch |err| {
+    file_source_html(decl.file, &string_result, decl.ast_node, .{}) catch |err| {
         fatal("unable to render source: {s}", .{@errorName(err)});
     };
     return String.init(string_result.items);
@@ -468,7 +473,7 @@ export fn decl_doctest_html(decl_index: Decl.Index) String {
         return String.init("");
 
     string_result.clearRetainingCapacity();
-    file_source_html(decl.file, &string_result, doctest_ast_node) catch |err| {
+    file_source_html(decl.file, &string_result, doctest_ast_node, .{}) catch |err| {
         fatal("unable to render source: {s}", .{@errorName(err)});
     };
     return String.init(string_result.items);
@@ -669,7 +674,10 @@ export fn decl_type_html(decl_index: Decl.Index) String {
         if (ast.fullVarDecl(decl.ast_node)) |var_decl| {
             if (var_decl.ast.type_node != 0) {
                 string_result.appendSlice(gpa, "<code>") catch @panic("OOM");
-                file_source_html(decl.file, &string_result, var_decl.ast.type_node) catch |e| {
+                file_source_html(decl.file, &string_result, var_decl.ast.type_node, .{
+                    .skip_comments = true,
+                    .collapse_whitespace = true,
+                }) catch |e| {
                     fatal("unable to render html: {s}", .{@errorName(e)});
                 };
                 string_result.appendSlice(gpa, "</code>") catch @panic("OOM");
@@ -831,10 +839,18 @@ export fn namespace_members(parent: Decl.Index, include_private: bool) Slice(Dec
     return Slice(Decl.Index).init(g.members.items);
 }
 
+const RenderSourceOptions = struct {
+    skip_doc_comments: bool = false,
+    skip_comments: bool = false,
+    collapse_whitespace: bool = false,
+    fn_link: Decl.Index = .none,
+};
+
 fn file_source_html(
     file_index: Walk.File.Index,
     out: *std.ArrayListUnmanaged(u8),
     root_node: Ast.Node.Index,
+    options: RenderSourceOptions,
 ) !void {
     const ast = file_index.get_ast();
     const file = file_index.get();
@@ -845,6 +861,7 @@ fn file_source_html(
 
     const token_tags = ast.tokens.items(.tag);
     const token_starts = ast.tokens.items(.start);
+    const main_tokens = ast.nodes.items(.main_token);
 
     const start_token = ast.firstToken(root_node);
     const end_token = ast.lastToken(root_node) + 1;
@@ -858,9 +875,11 @@ fn file_source_html(
     ) |tag, start, token_index| {
         const between = ast.source[cursor..start];
         if (std.mem.trim(u8, between, " \t\r\n").len > 0) {
-            try out.appendSlice(gpa, "<span class=\"tok-comment\">");
-            try appendEscaped(out, between);
-            try out.appendSlice(gpa, "</span>");
+            if (!options.skip_comments) {
+                try out.appendSlice(gpa, "<span class=\"tok-comment\">");
+                try appendEscaped(out, between);
+                try out.appendSlice(gpa, "</span>");
+            }
         } else if (between.len > 0) {
             try out.appendSlice(gpa, between);
         }
@@ -943,12 +962,28 @@ fn file_source_html(
             .doc_comment,
             .container_doc_comment,
             => {
-                try out.appendSlice(gpa, "<span class=\"tok-comment\">");
-                try appendEscaped(out, slice);
-                try out.appendSlice(gpa, "</span>");
+                if (!options.skip_doc_comments) {
+                    try out.appendSlice(gpa, "<span class=\"tok-comment\">");
+                    try appendEscaped(out, slice);
+                    try out.appendSlice(gpa, "</span>");
+                }
             },
 
             .identifier => i: {
+                if (options.fn_link != .none) {
+                    const fn_link = options.fn_link.get();
+                    const fn_token = main_tokens[fn_link.ast_node];
+                    if (token_index == fn_token + 1) {
+                        try out.appendSlice(gpa, "<a class=\"tok-fn\" href=\"#");
+                        _ = missing_feature_url_escape;
+                        try fn_link.fqn(out);
+                        try out.appendSlice(gpa, "\">");
+                        try appendEscaped(out, slice);
+                        try out.appendSlice(gpa, "</a>");
+                        break :i;
+                    }
+                }
+
                 if (token_index > 0 and token_tags[token_index - 1] == .keyword_fn) {
                     try out.appendSlice(gpa, "<span class=\"tok-fn\">");
                     try appendEscaped(out, slice);

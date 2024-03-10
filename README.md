@@ -49,7 +49,6 @@ what you want.
 
 ## Pre-Merge Roadmap
 
-* render member functions better (e.g. most of `#std.os`)
 * implement view: functions that return types that end with `return struct`
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
@@ -79,3 +78,4 @@ what you want.
 * in Walk.expr() it is missing support for asm_input/asm_output nodes
 * in renderNamespace, handle an aliasing loop
 * add a history item when clicking a search result (it already works when keyboard triggered)
+* instead of "declaration not found", show the decl that can't be penetrated (example: `#std.os.system.fd_t`)
