@@ -49,6 +49,7 @@ what you want.
 
 ## Pre-Merge Roadmap
 
+* detect some obvious type syntax as types (example: ArrayList Slice)
 * add source view links, currently you have to use the keyboard shortcut
 
 ## Post-Merge Roadmap
