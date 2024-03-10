@@ -53,10 +53,10 @@ what you want.
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
 * add source view links, currently you have to use the keyboard shortcut
-* redundant search results (search "format")
 
 ## Post-Merge Roadmap
 
+* redundant search results (search "format")
 * in query_exec_fallible, sorting should also check the local namespace inside the file
 * walk assign_destructure not implemented yet
 * escape URLs when rendering html (look for `missing_feature_url_escape`)
