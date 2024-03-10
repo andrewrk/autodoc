@@ -49,23 +49,28 @@ what you want.
 
 ## Pre-Merge Roadmap
 
+* render member functions better (e.g. bottom of std)
 * implement view: functions that return types that end with `return struct`
 * function view: parameters
 * function view: render fn prototype each component separate rather than source rendering
 * categorize an alias such as `std.zig.Ast.NodeList` as a type
 * struct fields: render each component separate rather than via source rendering
 * add source view links, currently you have to use the keyboard shortcut
-* include struct field names and doc comments in search query matching
-* include function parameter names and doc comments in search query matching
-* convert TODO comments into roadmap
 * make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
 * scroll to top when clicking fresh link. but don't disrupt the already working scroll history
+* convert TODO comments into roadmap
 
 ## Post-Merge Roadmap
 
+* when global const has a type of `type`, categorize it as a type despite its value
+  - example: `std.DynLib` (requires patching to add type annotation)
+* show abbreviated doc comments in types and namespaces listings
+* show type function names as e.g. `ArrayList(T)`
 * enum fields should not be linkified (example: `std.log.Level`)
 * shrink Ast to fit the slices
 * linkification of methods (example: `std.array_hash_map.ArrayHashMap.count`)
 * navigating to source from a decl should scroll to the decl
 * in source view, make `@imports` into links, but keep same syntax highlighting
+* include struct field names and doc comments in search query matching
+* include function parameter names and doc comments in search query matching

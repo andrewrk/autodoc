@@ -660,8 +660,19 @@ export fn decl_type_html(decl_index: Decl.Index) String {
     const decl = decl_index.get();
     const ast = decl.file.get_ast();
     string_result.clearRetainingCapacity();
-    _ = ast; // TODO
-    string_result.appendSlice(gpa, "TODO_type_here") catch @panic("OOM");
+    t: {
+        // If there is an explicit type, use it.
+        if (ast.fullVarDecl(decl.ast_node)) |var_decl| {
+            if (var_decl.ast.type_node != 0) {
+                string_result.appendSlice(gpa, "<code>") catch @panic("OOM");
+                file_source_html(decl.file, &string_result, var_decl.ast.type_node) catch |e| {
+                    fatal("unable to render html: {s}", .{@errorName(e)});
+                };
+                string_result.appendSlice(gpa, "</code>") catch @panic("OOM");
+                break :t;
+            }
+        }
+    }
     return String.init(string_result.items);
 }
 
