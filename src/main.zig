@@ -431,7 +431,7 @@ fn decl_field_html_fallible(
     }
 }
 
-export fn decl_fn_proto_html(decl_index: Decl.Index) String {
+export fn decl_fn_proto_html(decl_index: Decl.Index, linkify_fn_name: bool) String {
     const decl = decl_index.get();
     const ast = decl.file.get_ast();
     const node_tags = ast.nodes.items(.tag);
@@ -453,7 +453,7 @@ export fn decl_fn_proto_html(decl_index: Decl.Index) String {
         .skip_doc_comments = true,
         .skip_comments = true,
         .collapse_whitespace = true,
-        .fn_link = decl_index,
+        .fn_link = if (linkify_fn_name) decl_index else .none,
     }) catch |err| {
         fatal("unable to render source: {s}", .{@errorName(err)});
     };
@@ -884,7 +884,12 @@ fn file_source_html(
                 try out.appendSlice(gpa, "</span>");
             }
         } else if (between.len > 0) {
-            try out.appendSlice(gpa, between);
+            if (options.collapse_whitespace) {
+                if (out.items.len > 0 and out.items[out.items.len - 1] != ' ')
+                    try out.append(gpa, ' ');
+            } else {
+                try out.appendSlice(gpa, between);
+            }
         }
         if (tag == .eof) break;
         const slice = ast.tokenSlice(token_index);
