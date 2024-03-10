@@ -58,11 +58,11 @@ what you want.
 * add source view links, currently you have to use the keyboard shortcut
 * make the search box and nav bar stretch to fit the window
 * redundant search results (search "format")
-* scroll to top when clicking fresh link. but don't disrupt the already working scroll history
 * convert TODO comments into roadmap
 
 ## Post-Merge Roadmap
 
+* infer comptime_int constants (example: members of `#std.time`)
 * when global const has a type of `type`, categorize it as a type despite its value
   - example: `std.DynLib` (requires patching to add type annotation)
 * show abbreviated doc comments in types and namespaces listings
