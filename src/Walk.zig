@@ -253,6 +253,8 @@ pub const File = struct {
                     return .{ .global_const = node };
                 },
 
+                .@"switch", .switch_comma => return categorize_switch(file_index, node),
+
                 .optional_type,
                 .array_type,
                 .array_type_sentinel,
@@ -325,6 +327,43 @@ pub const File = struct {
                 }
             }
 
+            return .{ .global_const = node };
+        }
+
+        fn categorize_switch(file_index: File.Index, node: Ast.Node.Index) Category {
+            const ast = file_index.get_ast();
+            const node_datas = ast.nodes.items(.data);
+            const extra = ast.extraData(node_datas[node].rhs, Ast.Node.SubRange);
+            const case_nodes = ast.extra_data[extra.start..extra.end];
+            var all_type_type = true;
+            var all_error_set = true;
+            var any_type = false;
+            if (case_nodes.len == 0) return .{ .global_const = node };
+            for (case_nodes) |case_node| {
+                const case = ast.fullSwitchCase(case_node).?;
+                switch (categorize_expr_deep(file_index, case.ast.target_expr)) {
+                    .type_type => {
+                        any_type = true;
+                        all_error_set = false;
+                    },
+                    .error_set => {
+                        any_type = true;
+                        all_type_type = false;
+                    },
+                    .type, .namespace, .type_function => {
+                        any_type = true;
+                        all_error_set = false;
+                        all_type_type = false;
+                    },
+                    else => {
+                        all_error_set = false;
+                        all_type_type = false;
+                    },
+                }
+            }
+            if (all_type_type) return .type_type;
+            if (all_error_set) return .{ .error_set = node };
+            if (any_type) return .type;
             return .{ .global_const = node };
         }
     };

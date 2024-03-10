@@ -53,6 +53,7 @@ what you want.
 
 ## Post-Merge Roadmap
 
+* when navigating back to search results, up+down arrow should keep working
 * redundant search results (search "format")
 * in query_exec_fallible, sorting should also check the local namespace inside the file
 * walk assign_destructure not implemented yet
