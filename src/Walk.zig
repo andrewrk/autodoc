@@ -15,7 +15,10 @@ pub const Category = union(enum(u8)) {
     error_set: Ast.Node.Index,
     global_const: Ast.Node.Index,
     alias: Decl.Index,
+    /// A primitive identifier that is also a type.
     type,
+    /// Specifically it is the literal `type`.
+    type_type,
     /// A function that returns a type.
     type_function: Ast.Node.Index,
 
@@ -119,7 +122,7 @@ pub const File = struct {
             full: Ast.full.FnProto,
         ) Category {
             return switch (categorize_expr(file_index, full.ast.return_type)) {
-                .namespace, .type => .{ .type_function = node },
+                .namespace, .error_set, .type_type => .{ .type_function = node },
                 else => .{ .function = node },
             };
         }
@@ -153,6 +156,9 @@ pub const File = struct {
                 .identifier => {
                     const name_token = ast.nodes.items(.main_token)[node];
                     const ident_name = ast.tokenSlice(name_token);
+                    if (std.mem.eql(u8, ident_name, "type"))
+                        return .type_type;
+
                     if (isPrimitiveNonType(ident_name))
                         return .{ .primitive = node };
 

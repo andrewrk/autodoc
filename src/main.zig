@@ -530,7 +530,7 @@ export fn decl_category_name(decl_index: Decl.Index) String {
         .global_variable => "Global Variable",
         .function => "Function",
         .type_function => "Type Function",
-        .type => "Type",
+        .type, .type_type => "Type",
         .error_set => "Error Set",
         .global_const => "Constant",
         .primitive => "Primitive Value",
