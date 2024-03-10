@@ -376,6 +376,10 @@ export fn decl_fields(decl_index: Decl.Index) Slice(Ast.Node.Index) {
     return Slice(Ast.Node.Index).init(decl_fields_fallible(decl_index) catch @panic("OOM"));
 }
 
+export fn decl_params(decl_index: Decl.Index) Slice(Ast.Node.Index) {
+    return Slice(Ast.Node.Index).init(decl_params_fallible(decl_index) catch @panic("OOM"));
+}
+
 fn decl_fields_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
     const g = struct {
         var result: std.ArrayListUnmanaged(Ast.Node.Index) = .{};
@@ -398,6 +402,20 @@ fn decl_fields_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
     return g.result.items;
 }
 
+fn decl_params_fallible(decl_index: Decl.Index) ![]Ast.Node.Index {
+    const g = struct {
+        var result: std.ArrayListUnmanaged(Ast.Node.Index) = .{};
+    };
+    g.result.clearRetainingCapacity();
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+    const value_node = decl.value_node() orelse return &.{};
+    var buf: [1]Ast.Node.Index = undefined;
+    const fn_proto = ast.fullFnProto(&buf, value_node) orelse return &.{};
+    try g.result.appendSlice(gpa, fn_proto.ast.params);
+    return g.result.items;
+}
+
 export fn error_html(base_decl: Decl.Index, error_identifier: ErrorIdentifier) String {
     string_result.clearRetainingCapacity();
     error_identifier.html(base_decl, &string_result) catch @panic("OOM");
@@ -407,6 +425,12 @@ export fn error_html(base_decl: Decl.Index, error_identifier: ErrorIdentifier) S
 export fn decl_field_html(decl_index: Decl.Index, field_node: Ast.Node.Index) String {
     string_result.clearRetainingCapacity();
     decl_field_html_fallible(&string_result, decl_index, field_node) catch @panic("OOM");
+    return String.init(string_result.items);
+}
+
+export fn decl_param_html(decl_index: Decl.Index, param_node: Ast.Node.Index) String {
+    string_result.clearRetainingCapacity();
+    decl_param_html_fallible(&string_result, decl_index, param_node) catch @panic("OOM");
     return String.init(string_result.items);
 }
 
@@ -423,6 +447,31 @@ fn decl_field_html_fallible(
 
     const field = ast.fullContainerField(field_node).?;
     const first_doc_comment = Decl.findFirstDocComment(ast, field.firstToken());
+
+    if (ast.tokens.items(.tag)[first_doc_comment] == .doc_comment) {
+        try out.appendSlice(gpa, "<div class=\"fieldDocs\">");
+        try render_docs(out, decl_index, first_doc_comment, false);
+        try out.appendSlice(gpa, "</div>");
+    }
+}
+
+fn decl_param_html_fallible(
+    out: *std.ArrayListUnmanaged(u8),
+    decl_index: Decl.Index,
+    param_node: Ast.Node.Index,
+) !void {
+    const decl = decl_index.get();
+    const ast = decl.file.get_ast();
+    const colon = ast.firstToken(param_node) - 1;
+    const name_token = colon - 1;
+    const first_doc_comment = Decl.findFirstDocComment(ast, name_token);
+    const name = ast.tokenSlice(name_token);
+
+    try out.appendSlice(gpa, "<pre><code>");
+    try appendEscaped(out, name);
+    try out.appendSlice(gpa, ": ");
+    try file_source_html(decl.file, out, param_node, .{});
+    try out.appendSlice(gpa, "</code></pre>");
 
     if (ast.tokens.items(.tag)[first_doc_comment] == .doc_comment) {
         try out.appendSlice(gpa, "<div class=\"fieldDocs\">");
