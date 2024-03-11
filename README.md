@@ -49,7 +49,7 @@ what you want.
 
 ## Pre-Merge Roadmap
 
-* comptime keyword messes up doc comments in function view
+* wasm stack overflow in std.os
 
 ## Post-Merge Roadmap
 

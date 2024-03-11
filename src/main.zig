@@ -466,9 +466,20 @@ fn decl_param_html_fallible(
 ) !void {
     const decl = decl_index.get();
     const ast = decl.file.get_ast();
+    const token_tags = ast.tokens.items(.tag);
     const colon = ast.firstToken(param_node) - 1;
     const name_token = colon - 1;
-    const first_doc_comment = Decl.findFirstDocComment(ast, name_token);
+    const first_doc_comment = f: {
+        var it = ast.firstToken(param_node);
+        while (it > 0) {
+            it -= 1;
+            switch (token_tags[it]) {
+                .doc_comment, .colon, .identifier, .keyword_comptime, .keyword_noalias => {},
+                else => break,
+            }
+        }
+        break :f it + 1;
+    };
     const name = ast.tokenSlice(name_token);
 
     try out.appendSlice(gpa, "<pre><code>");
