@@ -517,6 +517,10 @@ test "tables require leading and trailing pipes" {
         \\
         \\| But | this | is |
         \\
+        \\Also not a table:
+        \\|
+        \\     |
+        \\
     ,
         \\<p>Not | a | table</p>
         \\<table>
@@ -526,6 +530,9 @@ test "tables require leading and trailing pipes" {
         \\<td>is</td>
         \\</tr>
         \\</table>
+        \\<p>Also not a table:
+        \\|
+        \\|</p>
         \\
     );
 }
