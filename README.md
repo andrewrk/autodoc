@@ -5,11 +5,9 @@ package documentation.
 
 ## Status
 
-Nearly reached feature parity with previous implementation.
+Has been [upstreamed directly into the Zig project](https://github.com/ziglang/zig/pull/19208).
 
-[Will be upstreamed soon](https://github.com/ziglang/zig/pull/19208)
-
-See the roadmap below.
+This project is now an archive.
 
 ## Development
 
@@ -47,7 +45,7 @@ If the system doesn't find a file named "foo/root.zig" or "foo/foo.zig" it's goi
 to use the first file in the tar as the module root, which is probably not
 what you want.
 
-## Post-Merge Roadmap
+## Roadmap
 
 * when navigating back to search results, up+down arrow should keep working
 * redundant search results (search "format")
