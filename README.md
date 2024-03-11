@@ -47,10 +47,6 @@ If the system doesn't find a file named "foo/root.zig" or "foo/foo.zig" it's goi
 to use the first file in the tar as the module root, which is probably not
 what you want.
 
-## Pre-Merge Roadmap
-
-* wasm stack overflow in std.os
-
 ## Post-Merge Roadmap
 
 * when navigating back to search results, up+down arrow should keep working

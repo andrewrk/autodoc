@@ -127,15 +127,11 @@ pub const File = struct {
             };
         }
 
-        pub fn categorize_expr_deep(file_index: File.Index, start_node: Ast.Node.Index) Category {
-            var node = start_node;
-            while (true) {
-                const result = categorize_expr(file_index, node);
-                switch (result) {
-                    .alias => |aliasee| node = aliasee.get().value_node() orelse return result,
-                    else => return result,
-                }
-            }
+        pub fn categorize_expr_deep(file_index: File.Index, node: Ast.Node.Index) Category {
+            return switch (categorize_expr(file_index, node)) {
+                .alias => |aliasee| aliasee.get().categorize(),
+                else => |result| result,
+            };
         }
 
         pub fn categorize_expr(file_index: File.Index, node: Ast.Node.Index) Category {
